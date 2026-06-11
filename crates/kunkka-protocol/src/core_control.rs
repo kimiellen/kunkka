@@ -16,7 +16,7 @@ pub struct CoreStatusRequest;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreStatusResponse {
-    pub worker_count: usize,
+    pub worker_count: u64,
     pub socket_path: String,
     pub runtime_ready: bool,
 }
