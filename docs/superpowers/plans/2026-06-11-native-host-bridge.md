@@ -665,18 +665,9 @@ Update `crates/kunkka-native-host/Cargo.toml`:
 
 ```toml
 [dependencies]
-kunkka-ipc = { path = "../kunkka-ipc" }
-kunkka-protocol = { path = "../kunkka-protocol" }
-libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
-
-[dev-dependencies]
-kunkka-core = { path = "../kunkka-core" }
-kunkka-worker-sdk = { path = "../kunkka-worker-sdk" }
-tempfile.workspace = true
 ```
 
 Create `crates/kunkka-native-host/src/lib.rs`:
@@ -721,9 +712,9 @@ pub enum NativeHostError {
 impl NativeHostError {
     pub fn code(&self) -> NativeErrorCode {
         match self {
-            Self::InvalidRequest(_) | Self::Json(_) => NativeErrorCode::InvalidRequest,
+            Self::InvalidRequest(_) | Self::Json(_) | Self::Io(_) => NativeErrorCode::InvalidRequest,
             Self::CoreUnavailable(_) => NativeErrorCode::CoreUnavailable,
-            Self::CoreIpc(_) | Self::Io(_) => NativeErrorCode::CoreIpcError,
+            Self::CoreIpc(_) => NativeErrorCode::CoreIpcError,
             Self::UnexpectedCoreResponse(_) => NativeErrorCode::UnexpectedCoreResponse,
         }
     }
@@ -933,6 +924,7 @@ git commit -m "feat: add native messaging protocol"
 **Files:**
 
 - Modify: `crates/kunkka-native-host/src/lib.rs`
+- Modify: `crates/kunkka-native-host/Cargo.toml`
 - Create: `crates/kunkka-native-host/src/path.rs`
 - Create: `crates/kunkka-native-host/tests/path.rs`
 
@@ -993,6 +985,12 @@ Run: `cargo test -p kunkka-native-host --test path`
 Expected: FAIL with unresolved module `kunkka_native_host::path`.
 
 - [ ] **Step 3: Implement path resolution**
+
+Update `crates/kunkka-native-host/Cargo.toml` dependencies:
+
+```toml
+libc.workspace = true
+```
 
 Update `crates/kunkka-native-host/src/lib.rs`:
 
@@ -1062,7 +1060,7 @@ Expected: PASS with 3 tests.
 Run:
 
 ```bash
-git add crates/kunkka-native-host/src/lib.rs crates/kunkka-native-host/src/path.rs crates/kunkka-native-host/tests/path.rs
+git add crates/kunkka-native-host/Cargo.toml crates/kunkka-native-host/src/lib.rs crates/kunkka-native-host/src/path.rs crates/kunkka-native-host/tests/path.rs
 git commit -m "feat: resolve native host core socket"
 ```
 
@@ -1071,6 +1069,7 @@ git commit -m "feat: resolve native host core socket"
 **Files:**
 
 - Modify: `crates/kunkka-native-host/src/lib.rs`
+- Modify: `crates/kunkka-native-host/Cargo.toml`
 - Create: `crates/kunkka-native-host/src/bridge.rs`
 - Create: `crates/kunkka-native-host/tests/bridge_mapping.rs`
 
@@ -1150,6 +1149,12 @@ Expected: FAIL with unresolved module `kunkka_native_host::bridge`.
 
 - [ ] **Step 3: Implement mapping functions**
 
+Update `crates/kunkka-native-host/Cargo.toml` dependencies:
+
+```toml
+kunkka-protocol = { path = "../kunkka-protocol" }
+```
+
 Update `crates/kunkka-native-host/src/lib.rs`:
 
 ```rust
@@ -1209,7 +1214,7 @@ Expected: PASS with 4 tests.
 Run:
 
 ```bash
-git add crates/kunkka-native-host/src/lib.rs crates/kunkka-native-host/src/bridge.rs crates/kunkka-native-host/tests/bridge_mapping.rs
+git add crates/kunkka-native-host/Cargo.toml crates/kunkka-native-host/src/lib.rs crates/kunkka-native-host/src/bridge.rs crates/kunkka-native-host/tests/bridge_mapping.rs
 git commit -m "feat: map native commands to core control"
 ```
 
@@ -1218,6 +1223,7 @@ git commit -m "feat: map native commands to core control"
 **Files:**
 
 - Modify: `crates/kunkka-native-host/src/bridge.rs`
+- Modify: `crates/kunkka-native-host/Cargo.toml`
 - Create: `crates/kunkka-native-host/tests/bridge_session.rs`
 
 - [ ] **Step 1: Write failing session tests**
@@ -1425,6 +1431,19 @@ Expected: FAIL with unresolved `NativeHostSession`.
 
 - [ ] **Step 3: Implement cached bridge session**
 
+Update `crates/kunkka-native-host/Cargo.toml` dependencies and dev-dependencies:
+
+```toml
+[dependencies]
+kunkka-ipc = { path = "../kunkka-ipc" }
+tokio.workspace = true
+
+[dev-dependencies]
+kunkka-core = { path = "../kunkka-core" }
+kunkka-worker-sdk = { path = "../kunkka-worker-sdk" }
+tempfile.workspace = true
+```
+
 Append this implementation to `crates/kunkka-native-host/src/bridge.rs` after the mapping functions:
 
 ```rust
@@ -1572,7 +1591,7 @@ Expected: PASS with session integration tests.
 Run:
 
 ```bash
-git add crates/kunkka-native-host/src/bridge.rs crates/kunkka-native-host/src/native_protocol.rs crates/kunkka-native-host/tests/bridge_session.rs
+git add crates/kunkka-native-host/Cargo.toml crates/kunkka-native-host/src/bridge.rs crates/kunkka-native-host/src/native_protocol.rs crates/kunkka-native-host/tests/bridge_session.rs
 git commit -m "feat: bridge native host session to core"
 ```
 
