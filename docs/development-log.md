@@ -2,6 +2,21 @@
 
 ## 2026-06-11
 
+### Task 4 Plan: Native Messaging JSON and Length Codec
+
+Scope:
+
+- Add JSON request/response protocol types for `kunkka-native-host`.
+- Add WebExtension Native Messaging little-endian length-prefixed read/write helpers.
+- Keep native host as a bridge-only crate; do not add core bridge/path work or app business logic.
+
+TDD verification plan:
+
+1. Add integration tests for JSON protocol encode/decode behavior and native messaging length codec.
+2. Run native-host test targets first to confirm RED while library modules are absent.
+3. Implement minimal modules and manifest dependencies needed for the tests.
+4. Re-run the same tests and formatting check before committing.
+
 ### IPC Workspace
 
 Commit:

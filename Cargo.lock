@@ -251,7 +251,16 @@ dependencies = [
 name = "kunkka-native-host"
 version = "0.1.0"
 dependencies = [
+ "kunkka-core",
  "kunkka-ipc",
+ "kunkka-protocol",
+ "kunkka-worker-sdk",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
