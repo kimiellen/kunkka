@@ -1,14 +1,14 @@
 # Kunkka Workers
 
-## Role
+## 角色
 
-App backend workers are independent Rust processes that provide app-specific backend logic.
+App backend workers 是独立 Rust 进程，提供 app-specific backend logic。
 
-Workers connect to `kunkka-core` through Kunkka IPC over Unix Domain Socket.
+Workers 通过基于 Unix Domain Socket 的 Kunkka IPC 连接 `kunkka-core`。
 
-## Current Worker Registration
+## 当前 worker registration
 
-`kunkka-worker-sdk` currently defines:
+`kunkka-worker-sdk` 当前定义：
 
 - `WorkerId`
 - `AppId`
@@ -18,22 +18,23 @@ Workers connect to `kunkka-core` through Kunkka IPC over Unix Domain Socket.
 - `WorkerProtocolMessage`
 - `WorkerClient`
 
-Worker registration payloads are typed in `kunkka-worker-sdk` and serialized into opaque IPC payloads.
+Worker registration payload 在 `kunkka-worker-sdk` 中建模，并序列化为 opaque IPC payload。
 
-## Current Core Registry
+## 当前 core registry
 
-`kunkka-core` currently provides an in-memory `WorkerRegistry`.
+`kunkka-core` 当前提供 in-memory `WorkerRegistry`。
 
-Current behavior:
+当前行为：
 
-- register worker
-- replace duplicate worker ID
-- query registered worker by `WorkerId`
-- handle one worker registration request frame
-- accept one worker registration connection through core runtime loop
-- return `RegisterWorkerAccepted`
+- 注册 worker。
+- 使用重复 worker ID 时替换已有记录。
+- 通过 `WorkerId` 查询已注册 worker。
+- 处理一个 worker registration request frame。
+- core runtime loop 每次接受一个 IPC connection，并按 `Payload.schema` 分发。
+- `kunkka.worker.v1` 返回 `RegisterWorkerAccepted`。
+- `kunkka.core-control.v1` 当前由 core control protocol 处理，不属于 worker registration。
 
-## Not Implemented Yet
+## 尚未实现
 
 - worker process spawning
 - heartbeat loop

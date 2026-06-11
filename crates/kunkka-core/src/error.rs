@@ -16,6 +16,12 @@ pub enum CoreError {
     #[error("worker sdk error: {0}")]
     WorkerSdk(#[from] kunkka_worker_sdk::WorkerSdkError),
 
+    #[error("codec error: {0}")]
+    Codec(#[from] postcard::Error),
+
     #[error("invalid worker frame: {0}")]
     InvalidWorkerFrame(String),
+
+    #[error("invalid core frame: {0}")]
+    InvalidCoreFrame(String),
 }

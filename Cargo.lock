@@ -227,6 +227,8 @@ dependencies = [
  "kunkka-ipc",
  "kunkka-worker-sdk",
  "libc",
+ "postcard",
+ "serde",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",

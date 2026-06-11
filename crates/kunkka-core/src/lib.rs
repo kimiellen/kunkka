@@ -1,3 +1,4 @@
+pub mod control;
 pub mod error;
 pub mod ipc_server;
 pub mod runtime;

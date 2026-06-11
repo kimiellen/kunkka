@@ -1,19 +1,19 @@
-# Kunkka Architecture
+# Kunkka 架构
 
-## Project Positioning
+## 项目定位
 
-Kunkka is a local capability platform and multi-form application runtime.
+Kunkka 是本地能力平台和多形态应用 runtime。
 
-It supports multiple frontend forms:
+它支持多种 frontend form：
 
 - Browser Extension UI
 - CLI frontend
 - TUI frontend
 - Future desktop or webview frontends
 
-Kunkka provides one local capability foundation for app frontends and app backend workers.
+Kunkka 为 app frontend 和 app backend worker 提供统一的本地能力基础。
 
-## High-Level Architecture
+## 高层架构
 
 ```text
 Browser Extension / CLI / TUI
@@ -42,7 +42,7 @@ kunkka-core
 app backend workers
 ```
 
-## Confirmed Tech Stack
+## 已确认技术栈
 
 - Language: Rust
 - Async runtime: Tokio
@@ -56,7 +56,7 @@ app backend workers
 - Storage: SQLite + sqlx
 - First target environment: Linux / Arch Linux
 
-## Workspace Layout
+## Workspace layout
 
 ```text
 kunkka/
@@ -78,16 +78,31 @@ kunkka/
 └── xtask/
 ```
 
-Not all directories exist yet. This layout is the intended architecture target.
+并非所有目录都已经存在。该 layout 是目标架构。
 
-## Boundaries
+## 边界
 
-`kunkka-core` is the local capability platform. It must not contain concrete app business logic.
+`kunkka-core` 是本地能力平台。它不能包含具体 app business logic。
 
-`kunkka-ipc` is protocol infrastructure. It must not know browser, app, LLM, database, or worker business semantics.
+`kunkka-ipc` 是协议基础设施。它不能知道 browser、app、LLM、database 或 worker business semantics。
 
-`kunkka-native-host` is only a bridge between Native Messaging JSON and Kunkka IPC.
+`kunkka-native-host` 只负责桥接 Native Messaging JSON 和 Kunkka IPC。
 
-App backend workers contain app-specific backend business logic.
+App backend workers 包含 app-specific backend business logic。
 
-Frontend forms call local capabilities through core and workers.
+Frontend forms 通过 core 和 workers 调用本地能力。
+
+## 当前实现切片
+
+当前 workspace 已实现以下基础切片：
+
+- `kunkka-ipc`：frame protocol、postcard codec、Unix Domain Socket transport。
+- `kunkka-core`：XDG path management、runtime socket setup、single-connection runtime loop、in-memory worker registry、core control protocol。
+- `kunkka-worker-sdk`：worker registration protocol、payload codec、registration client。
+
+Core runtime 当前按 `Payload.schema` 分发请求：
+
+- `kunkka.worker.v1` 处理 worker registration。
+- `kunkka.core-control.v1` 处理 `Ping/Pong` 和 `Status/StatusResult`。
+
+CLI、TUI、native-host bridge、权限系统、worker request dispatch、数据库持久化仍是后续切片。
