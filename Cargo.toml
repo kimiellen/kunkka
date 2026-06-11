@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "crates/kunkka-ipc",
+  "crates/kunkka-protocol",
   "crates/kunkka-core",
   "crates/kunkka-worker-sdk",
   "crates/kunkka-native-host",

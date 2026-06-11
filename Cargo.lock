@@ -256,6 +256,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kunkka-protocol"
+version = "0.1.0"
+dependencies = [
+ "kunkka-ipc",
+ "postcard",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "kunkka-worker-sdk"
 version = "0.1.0"
 dependencies = [
