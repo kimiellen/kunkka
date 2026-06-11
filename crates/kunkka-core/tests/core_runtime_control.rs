@@ -1,11 +1,11 @@
-use kunkka_core::control::{
-    decode_control_message, encode_control_message, CoreControlMessage, CorePingRequest,
-    CorePingResponse, CoreStatusRequest,
-};
 use kunkka_core::prepare_core_runtime;
 use kunkka_core::xdg::KunkkaPaths;
 use kunkka_core::CoreError;
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload, RequestId, SessionId};
+use kunkka_protocol::core_control::{
+    decode_control_message, encode_control_message, CoreControlMessage, CorePingRequest,
+    CorePingResponse, CoreStatusRequest,
+};
 use kunkka_worker_sdk::{AppId, RegisterWorkerRequest, WorkerCapability, WorkerClient, WorkerId};
 use std::path::PathBuf;
 use tempfile::{tempdir, TempDir};

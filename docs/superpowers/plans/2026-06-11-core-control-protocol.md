@@ -23,6 +23,20 @@
 - 修改：`docs/ipc.md`
 - 修改：`docs/architecture.md`
 
+## 后续迁移：Core 使用共享 Core-Control Protocol
+
+Task 1 已将 core-control codec 所有权迁移到 `kunkka-protocol`。Task 2 仅迁移 `kunkka-core` 到共享协议，不启动 Task 3 或 native-host 工作。
+
+### Task 2：Migrate Core to Shared Core-Control Protocol
+
+- [ ] 先修改 `crates/kunkka-core/tests/core_runtime_control.rs` 的导入，改为使用 `kunkka_protocol::core_control`，并运行 `cargo test -p kunkka-core --test core_runtime_control` 确认因缺少 `kunkka-protocol` 依赖而 RED。
+- [ ] 在 `crates/kunkka-core/Cargo.toml` 添加 `kunkka-protocol` 依赖，并从 core 移除本地 `control` 模块导出。
+- [ ] 更新 `crates/kunkka-core/src/error.rs`，将 protocol codec 错误来源切换为 `kunkka_protocol::ProtocolError`。
+- [ ] 更新 `crates/kunkka-core/src/runtime.rs`，使用 `kunkka_protocol::core_control` 的消息、codec 与 schema；构造 `CoreStatusResponse` 时将 `self.registry.len()` 显式转换为 `u64`。
+- [ ] 删除 `crates/kunkka-core/src/control.rs` 与 `crates/kunkka-core/tests/core_control_protocol.rs`，因为 codec 所有权已迁移到 `kunkka-protocol`。
+- [ ] 运行 `cargo test -p kunkka-core --test core_runtime_control`、`cargo test -p kunkka-protocol --test core_control`、`cargo fmt --all --check` 确认 GREEN。
+- [ ] 按 Task 2 要求暂存并提交：`refactor: use shared core control protocol`。
+
 ### 任务 1：Core control payload codec
 
 - [ ] **步骤 1：编写失败的 codec 测试**

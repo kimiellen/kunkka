@@ -6,10 +6,9 @@ rust-version.workspace = true
 
 [dependencies]
 kunkka-ipc = { path = "../kunkka-ipc" }
+kunkka-protocol = { path = "../kunkka-protocol" }
 kunkka-worker-sdk = { path = "../kunkka-worker-sdk" }
 libc.workspace = true
-postcard.workspace = true
-serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 

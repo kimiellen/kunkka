@@ -1,12 +1,12 @@
-use crate::control::{
-    decode_control_message, encode_control_message, CoreControlMessage, CorePingResponse,
-    CoreStatusResponse, CORE_CONTROL_SCHEMA,
-};
 use crate::ipc_server::CoreIpcServer;
 use crate::worker_registry::{handle_worker_registration_frame, WorkerRegistry};
 use crate::xdg::KunkkaPaths;
 use crate::{CoreError, Result};
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata};
+use kunkka_protocol::core_control::{
+    decode_control_message, encode_control_message, CoreControlMessage, CorePingResponse,
+    CoreStatusResponse, CORE_CONTROL_SCHEMA,
+};
 use kunkka_worker_sdk::WORKER_PROTOCOL_SCHEMA;
 
 pub struct CoreRuntime {
@@ -80,7 +80,7 @@ impl CoreRuntime {
         let response_message = match decode_control_message(&payload)? {
             CoreControlMessage::Ping(_) => CoreControlMessage::Pong(CorePingResponse),
             CoreControlMessage::Status(_) => CoreControlMessage::StatusResult(CoreStatusResponse {
-                worker_count: self.registry.len(),
+                worker_count: self.registry.len() as u64,
                 socket_path: self.server.socket_path().to_string_lossy().into_owned(),
                 runtime_ready: true,
             }),

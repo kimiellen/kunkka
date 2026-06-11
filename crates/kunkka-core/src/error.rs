@@ -13,11 +13,11 @@ pub enum CoreError {
     #[error("ipc error: {0}")]
     Ipc(#[from] kunkka_ipc::IpcError),
 
+    #[error("protocol error: {0}")]
+    Protocol(#[from] kunkka_protocol::ProtocolError),
+
     #[error("worker sdk error: {0}")]
     WorkerSdk(#[from] kunkka_worker_sdk::WorkerSdkError),
-
-    #[error("codec error: {0}")]
-    Codec(#[from] postcard::Error),
 
     #[error("invalid worker frame: {0}")]
     InvalidWorkerFrame(String),
