@@ -251,6 +251,7 @@ dependencies = [
 name = "kunkka-native-host"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
