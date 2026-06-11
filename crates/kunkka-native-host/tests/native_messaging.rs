@@ -1,7 +1,17 @@
 use kunkka_native_host::native_messaging::{
     read_native_message, write_native_message, MAX_NATIVE_MESSAGE_LEN,
 };
+use kunkka_native_host::native_protocol::NativeErrorCode;
 use std::io::Cursor;
+
+#[test]
+fn clean_eof_before_length_prefix_returns_none() {
+    let mut reader = Cursor::new(Vec::new());
+
+    let decoded = read_native_message(&mut reader).unwrap();
+
+    assert_eq!(decoded, None);
+}
 
 #[test]
 fn reads_length_prefixed_json_body() {
@@ -40,5 +50,41 @@ fn rejects_oversized_native_message() {
 
     let err = read_native_message(&mut reader).unwrap_err();
 
+    assert!(err.to_string().contains("native message too large"));
+}
+
+#[test]
+fn partial_length_prefix_eof_returns_invalid_request() {
+    let mut reader = Cursor::new(vec![1, 0]);
+
+    let err = read_native_message(&mut reader).unwrap_err();
+
+    assert_eq!(err.code(), NativeErrorCode::InvalidRequest);
+    assert!(err.to_string().contains("length prefix ended early"));
+}
+
+#[test]
+fn partial_body_eof_returns_invalid_request() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&4_u32.to_le_bytes());
+    bytes.extend_from_slice(b"ab");
+    let mut reader = Cursor::new(bytes);
+
+    let err = read_native_message(&mut reader).unwrap_err();
+
+    assert_eq!(err.code(), NativeErrorCode::InvalidRequest);
+    assert!(err
+        .to_string()
+        .contains("body ended before declared length"));
+}
+
+#[test]
+fn write_oversized_json_body_returns_invalid_request() {
+    let mut output = Vec::new();
+    let value = "x".repeat(MAX_NATIVE_MESSAGE_LEN + 1);
+
+    let err = write_native_message(&mut output, &value).unwrap_err();
+
+    assert_eq!(err.code(), NativeErrorCode::InvalidRequest);
     assert!(err.to_string().contains("native message too large"));
 }

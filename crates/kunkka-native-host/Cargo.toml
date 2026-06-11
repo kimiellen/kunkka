@@ -5,15 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-kunkka-ipc = { path = "../kunkka-ipc" }
-kunkka-protocol = { path = "../kunkka-protocol" }
-libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
-
-[dev-dependencies]
-kunkka-core = { path = "../kunkka-core" }
-kunkka-worker-sdk = { path = "../kunkka-worker-sdk" }
-tempfile.workspace = true

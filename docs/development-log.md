@@ -2,7 +2,7 @@
 
 ## 2026-06-11
 
-### Task 4 Plan: Native Messaging JSON and Length Codec
+### Native Messaging JSON and Length Codec
 
 Scope:
 
@@ -16,6 +16,20 @@ TDD verification plan:
 2. Run native-host test targets first to confirm RED while library modules are absent.
 3. Implement minimal modules and manifest dependencies needed for the tests.
 4. Re-run the same tests and formatting check before committing.
+
+Commit:
+
+```text
+f0f669e feat: add native messaging protocol
+```
+
+Verification:
+
+```text
+cargo test -p kunkka-native-host --test native_protocol
+cargo test -p kunkka-native-host --test native_messaging
+cargo fmt --all --check
+```
 
 ### IPC Workspace
 

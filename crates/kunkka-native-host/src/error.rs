@@ -27,9 +27,11 @@ pub enum NativeHostError {
 impl NativeHostError {
     pub fn code(&self) -> NativeErrorCode {
         match self {
-            Self::InvalidRequest(_) | Self::Json(_) => NativeErrorCode::InvalidRequest,
+            Self::InvalidRequest(_) | Self::Json(_) | Self::Io(_) => {
+                NativeErrorCode::InvalidRequest
+            }
             Self::CoreUnavailable(_) => NativeErrorCode::CoreUnavailable,
-            Self::CoreIpc(_) | Self::Io(_) => NativeErrorCode::CoreIpcError,
+            Self::CoreIpc(_) => NativeErrorCode::CoreIpcError,
             Self::UnexpectedCoreResponse(_) => NativeErrorCode::UnexpectedCoreResponse,
         }
     }
