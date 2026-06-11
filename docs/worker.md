@@ -30,6 +30,7 @@ Current behavior:
 - replace duplicate worker ID
 - query registered worker by `WorkerId`
 - handle one worker registration request frame
+- accept one worker registration connection through core runtime loop
 - return `RegisterWorkerAccepted`
 
 ## Not Implemented Yet

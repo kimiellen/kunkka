@@ -5,7 +5,7 @@ Kunkka is a local capability platform for multiple frontend forms, including bro
 ## Implemented Slices
 
 - `kunkka-ipc`: internal frame protocol, postcard serialization, and Unix Domain Socket transport.
-- `kunkka-core`: XDG path resolution, private runtime directory setup, minimal core IPC socket binding, and in-memory worker registration.
+- `kunkka-core`: XDG path resolution, private runtime directory setup, minimal core IPC socket binding, in-memory worker registration, and a single-connection worker registration runtime loop.
 - `kunkka-worker-sdk`: shared worker registration protocol, typed payload codec, and registration client.
 
 ## Documentation
