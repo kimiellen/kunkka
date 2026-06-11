@@ -81,12 +81,14 @@ WebExtension Native Messaging JSON <-> Kunkka IPC core-control
 
 ```json
 { "id": "req-3", "ok": false, "error": { "code": "core_unavailable", "message": "failed to connect core socket" } }
+{ "id": null, "ok": false, "error": { "code": "invalid_request", "message": "missing request id" } }
 ```
 
 规则：
 
 - Request 必须包含 `id`。
-- Response 必须原样返回同一个 `id`。
+- 能解析出 request `id` 时，response 必须原样返回同一个 `id`。
+- 如果 JSON 非法或缺少 string `id`，错误 response 的 `id` 为 `null`。
 - `command` 第一版只接受 `ping` 和 `status`。
 - 每条有效 Native Messaging request 都应产生一条 response。
 - stdin EOF 时 native-host 退出。
@@ -106,6 +108,10 @@ stderr 可用于诊断日志，但第一版不要求结构化日志。
 ## Core IPC 连接策略
 
 `kunkka-native-host` 是长驻进程。
+
+为了支持 native-host 复用 core IPC connection，`kunkka-core` 的单连接 runtime loop 需要在同一个 accepted connection 上连续处理多个 request frame，直到该 connection EOF 或发生错误。
+
+第一版仍不实现多连接并发；core 同一时间只处理一个 accepted connection。多 frontend/worker 并发连接是后续切片。
 
 连接策略：
 
