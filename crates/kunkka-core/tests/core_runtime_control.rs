@@ -242,3 +242,77 @@ async fn core_control_response_message_as_request_returns_invalid_core_frame() {
         CoreError::InvalidCoreFrame(message) if message.contains("expected core control request")
     ));
 }
+
+#[tokio::test]
+async fn one_connection_can_handle_multiple_control_requests() {
+    let (_root, paths) = test_paths();
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let client_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+
+            let ping_payload =
+                encode_control_message(&CoreControlMessage::Ping(CorePingRequest)).unwrap();
+            let ping_frame = Frame::Request {
+                request_id: RequestId(101),
+                session_id: SessionId(202),
+                source: EndpointId::new("native-host"),
+                target: EndpointId::new("core"),
+                payload: ping_payload,
+                metadata: FrameMetadata::new(),
+            };
+            connection.send_frame(&ping_frame).await.unwrap();
+            let ping_response = connection.recv_frame().await.unwrap().unwrap();
+
+            let status_payload =
+                encode_control_message(&CoreControlMessage::Status(CoreStatusRequest)).unwrap();
+            let status_frame = Frame::Request {
+                request_id: RequestId(102),
+                session_id: SessionId(202),
+                source: EndpointId::new("native-host"),
+                target: EndpointId::new("core"),
+                payload: status_payload,
+                metadata: FrameMetadata::new(),
+            };
+            connection.send_frame(&status_frame).await.unwrap();
+            let status_response = connection.recv_frame().await.unwrap().unwrap();
+
+            (ping_response, status_response)
+        }
+    });
+
+    runtime.run_once().await.unwrap();
+
+    let (ping_response, status_response) = client_task.await.unwrap();
+
+    let Frame::Response {
+        request_id: ping_request_id,
+        payload: ping_payload,
+        ..
+    } = ping_response
+    else {
+        panic!("expected ping response frame");
+    };
+    assert_eq!(ping_request_id, RequestId(101));
+    assert_eq!(
+        decode_control_message(&ping_payload).unwrap(),
+        CoreControlMessage::Pong(CorePingResponse)
+    );
+
+    let Frame::Response {
+        request_id: status_request_id,
+        payload: status_payload,
+        ..
+    } = status_response
+    else {
+        panic!("expected status response frame");
+    };
+    assert_eq!(status_request_id, RequestId(102));
+    assert!(matches!(
+        decode_control_message(&status_payload).unwrap(),
+        CoreControlMessage::StatusResult(_)
+    ));
+}

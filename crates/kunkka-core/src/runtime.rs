@@ -46,12 +46,11 @@ impl CoreRuntime {
 
     pub async fn run_once(&mut self) -> Result<()> {
         let mut connection = self.server.accept_one().await?;
-        let Some(frame) = connection.recv_frame().await? else {
-            return Ok(());
-        };
 
-        let response = self.handle_frame(frame)?;
-        connection.send_frame(&response).await?;
+        while let Some(frame) = connection.recv_frame().await? {
+            let response = self.handle_frame(frame)?;
+            connection.send_frame(&response).await?;
+        }
 
         Ok(())
     }
