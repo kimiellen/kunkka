@@ -90,6 +90,7 @@ WebExtension Native Messaging JSON <-> Kunkka IPC core-control
 - 能解析出 request `id` 时，response 必须原样返回同一个 `id`。
 - 如果 JSON 非法或缺少 string `id`，错误 response 的 `id` 为 `null`。
 - `command` 第一版只接受 `ping` 和 `status`。
+- `worker_count` 是 wire protocol 数字字段，Rust 类型使用固定宽度 `u64`。
 - 每条有效 Native Messaging request 都应产生一条 response。
 - stdin EOF 时 native-host 退出。
 
