@@ -1,5 +1,6 @@
 pub mod error;
 pub mod ipc_server;
+pub mod worker_registry;
 pub mod xdg;
 
 pub use error::{CoreError, Result};

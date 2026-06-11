@@ -12,4 +12,10 @@ pub enum CoreError {
 
     #[error("ipc error: {0}")]
     Ipc(#[from] kunkka_ipc::IpcError),
+
+    #[error("worker sdk error: {0}")]
+    WorkerSdk(#[from] kunkka_worker_sdk::WorkerSdkError),
+
+    #[error("invalid worker frame: {0}")]
+    InvalidWorkerFrame(String),
 }

@@ -225,6 +225,7 @@ name = "kunkka-core"
 version = "0.1.0"
 dependencies = [
  "kunkka-ipc",
+ "kunkka-worker-sdk",
  "libc",
  "tempfile",
  "thiserror 1.0.69",
@@ -257,6 +258,9 @@ name = "kunkka-worker-sdk"
 version = "0.1.0"
 dependencies = [
  "kunkka-ipc",
+ "postcard",
+ "serde",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
