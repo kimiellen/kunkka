@@ -225,6 +225,10 @@ name = "kunkka-core"
 version = "0.1.0"
 dependencies = [
  "kunkka-ipc",
+ "libc",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]

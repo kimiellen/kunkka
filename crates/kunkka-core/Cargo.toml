@@ -6,3 +6,9 @@ rust-version.workspace = true
 
 [dependencies]
 kunkka-ipc = { path = "../kunkka-ipc" }
+libc.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
