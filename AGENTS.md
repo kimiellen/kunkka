@@ -6,6 +6,12 @@
 - Keep implementation changes minimal and focused.
 - Prefer TDD for behavior changes.
 
+## Iron Law
+
+- Before any implementation, execution, or commit, the relevant design, plan, architectural decision, or project constraint must be documented in the repository first.
+- If the required document does not exist, create or update it before changing source code or running the implementation task.
+- Do not rely on chat history as the source of truth for project decisions.
+
 ## Project Boundaries
 
 Kunkka is a local capability platform for multiple frontend forms.
