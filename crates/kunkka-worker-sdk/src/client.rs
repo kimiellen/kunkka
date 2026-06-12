@@ -1,6 +1,7 @@
 use crate::{
-    decode_worker_message, encode_worker_message, RegisterWorkerRequest, RegisterWorkerResponse,
-    Result, WorkerId, WorkerProtocolMessage, WorkerSdkError,
+    decode_worker_message, encode_worker_message, DispatchWorkerRequest, DispatchWorkerResponse,
+    RegisterWorkerRequest, RegisterWorkerResponse, Result, WorkerId, WorkerProtocolMessage,
+    WorkerSdkError,
 };
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, RequestId, SessionId};
 use std::path::Path;
@@ -11,6 +12,15 @@ pub struct WorkerClient {
     core_endpoint: EndpointId,
     session_id: SessionId,
     next_request_id: u128,
+}
+
+#[derive(Debug)]
+pub struct DispatchRequestContext {
+    pub request_id: RequestId,
+    pub session_id: SessionId,
+    pub source: EndpointId,
+    pub target: EndpointId,
+    pub request: DispatchWorkerRequest,
 }
 
 impl WorkerClient {
@@ -83,6 +93,63 @@ impl WorkerClient {
                 "expected RegisterWorkerAccepted, got {other:?}"
             ))),
         }
+    }
+
+    pub async fn recv_dispatch(&mut self) -> Result<DispatchRequestContext> {
+        let frame = self
+            .connection
+            .recv_frame()
+            .await?
+            .ok_or(kunkka_ipc::IpcError::ConnectionClosed)?;
+
+        let Frame::Request {
+            request_id,
+            session_id,
+            source,
+            target,
+            payload,
+            ..
+        } = frame
+        else {
+            return Err(WorkerSdkError::Protocol(
+                "expected dispatch request frame".to_string(),
+            ));
+        };
+
+        let message = decode_worker_message(&payload)?;
+        let WorkerProtocolMessage::DispatchWorker(request) = message else {
+            return Err(WorkerSdkError::Protocol(
+                "expected DispatchWorker request".to_string(),
+            ));
+        };
+
+        Ok(DispatchRequestContext {
+            request_id,
+            session_id,
+            source,
+            target,
+            request,
+        })
+    }
+
+    pub async fn respond_dispatch(
+        &mut self,
+        context: DispatchRequestContext,
+        response: DispatchWorkerResponse,
+    ) -> Result<()> {
+        let payload =
+            encode_worker_message(&WorkerProtocolMessage::DispatchWorkerResult(response))?;
+        let frame = Frame::Response {
+            request_id: context.request_id,
+            session_id: context.session_id,
+            source: context.target,
+            target: context.source,
+            payload,
+            metadata: FrameMetadata::new(),
+        };
+
+        self.connection.send_frame(&frame).await?;
+        Ok(())
     }
 
     fn next_request_id(&mut self) -> RequestId {

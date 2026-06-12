@@ -3,7 +3,7 @@ pub mod codec;
 pub mod error;
 pub mod types;
 
-pub use client::WorkerClient;
+pub use client::{DispatchRequestContext, WorkerClient};
 pub use codec::{
     decode_worker_message, encode_worker_message, WORKER_PROTOCOL_CONTENT_TYPE,
     WORKER_PROTOCOL_SCHEMA,

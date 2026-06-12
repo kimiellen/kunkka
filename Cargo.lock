@@ -282,7 +282,9 @@ dependencies = [
  "kunkka-ipc",
  "postcard",
  "serde",
+ "tempfile",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]

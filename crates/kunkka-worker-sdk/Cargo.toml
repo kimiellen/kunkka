@@ -9,3 +9,7 @@ kunkka-ipc = { path = "../kunkka-ipc" }
 postcard.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio.workspace = true
