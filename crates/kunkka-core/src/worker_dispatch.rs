@@ -1,11 +1,14 @@
+use crate::app_manifest::AppRegistry;
 use crate::worker_registry::WorkerRegistry;
 use crate::{CoreError, Result};
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload, RequestId, SessionId};
 use kunkka_worker_sdk::{
     decode_worker_message, encode_worker_message, AppId, DispatchWorkerRequest,
-    DispatchWorkerResponse, RegisterWorkerRequest, WorkerId, WorkerProtocolMessage,
+    DispatchWorkerResponse, RegisterWorkerRequest, RegisterWorkerResponse, WorkerId,
+    WorkerProtocolMessage,
 };
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::process::Child;
 use std::time::{Duration, Instant};
 
@@ -17,6 +20,10 @@ pub enum DispatchResult {
 
 pub struct WorkerManager {
     registry: WorkerRegistry,
+    #[allow(dead_code)]
+    app_registry: AppRegistry,
+    #[allow(dead_code)]
+    socket_path: PathBuf,
     active_workers: BTreeMap<AppId, ActiveWorker>,
     next_request_id: u128,
 }
@@ -35,6 +42,18 @@ impl WorkerManager {
     pub fn new_empty() -> Self {
         Self {
             registry: WorkerRegistry::new(),
+            app_registry: AppRegistry::default(),
+            socket_path: PathBuf::new(),
+            active_workers: BTreeMap::new(),
+            next_request_id: 1,
+        }
+    }
+
+    pub fn with_app_registry(app_registry: AppRegistry, socket_path: PathBuf) -> Self {
+        Self {
+            registry: WorkerRegistry::new(),
+            app_registry,
+            socket_path,
             active_workers: BTreeMap::new(),
             next_request_id: 1,
         }
@@ -105,6 +124,71 @@ impl WorkerManager {
         );
     }
 
+    pub async fn handle_registration_connection(
+        &mut self,
+        frame: Frame,
+        mut connection: IpcConnection,
+        mut child: Option<Child>,
+        idle_timeout_ms: u64,
+    ) -> Result<()> {
+        let result = async {
+            let Frame::Request {
+                request_id,
+                session_id,
+                source,
+                target,
+                payload,
+                ..
+            } = frame
+            else {
+                return Err(CoreError::InvalidWorkerFrame(
+                    "expected request frame".to_string(),
+                ));
+            };
+
+            let message = decode_worker_message(&payload)?;
+            let WorkerProtocolMessage::RegisterWorker(request) = message else {
+                return Err(CoreError::InvalidWorkerFrame(
+                    "expected worker registration request".to_string(),
+                ));
+            };
+
+            let response = RegisterWorkerResponse {
+                worker_id: request.worker_id.clone(),
+                accepted: true,
+                message: None,
+            };
+            let response_payload =
+                encode_worker_message(&WorkerProtocolMessage::RegisterWorkerAccepted(response))?;
+            let response_frame = Frame::Response {
+                request_id,
+                session_id,
+                source: target_or_core(target),
+                target: source,
+                payload: response_payload,
+                metadata: FrameMetadata::new(),
+            };
+
+            connection.send_frame(&response_frame).await?;
+            Ok::<_, CoreError>((request, connection))
+        }
+        .await;
+
+        match result {
+            Ok((request, connection)) => {
+                self.insert_active_worker(request, connection, child.take(), idle_timeout_ms);
+                Ok(())
+            }
+            Err(err) => {
+                if let Some(child) = child.as_mut() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+                Err(err)
+            }
+        }
+    }
+
     pub async fn dispatch(
         &mut self,
         app_id: AppId,
@@ -157,6 +241,14 @@ impl WorkerManager {
         let request_id = RequestId(self.next_request_id);
         self.next_request_id += 1;
         request_id
+    }
+}
+
+fn target_or_core(target: EndpointId) -> EndpointId {
+    if target.as_str().is_empty() {
+        EndpointId::new("core")
+    } else {
+        target
     }
 }
 

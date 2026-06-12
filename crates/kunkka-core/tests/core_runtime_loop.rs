@@ -71,4 +71,7 @@ async fn run_once_accepts_worker_registration_and_updates_registry() {
     assert!(response.accepted);
     assert_eq!(response.worker_id.as_str(), "worker-1");
     assert!(runtime.registry().get(&WorkerId::new("worker-1")).is_some());
+    assert!(runtime
+        .worker_manager()
+        .is_active(&AppId::new("example-app")));
 }
