@@ -70,6 +70,23 @@ impl WorkerManager {
     ) {
         let app_id = request.app_id.clone();
         let worker_id = request.worker_id.clone();
+        let previous_app_id = self
+            .registry
+            .get(&worker_id)
+            .map(|registered| registered.app_id.clone());
+
+        if previous_app_id
+            .as_ref()
+            .is_some_and(|old_app_id| old_app_id != &app_id)
+        {
+            if let Some(mut old_worker) = previous_app_id
+                .as_ref()
+                .and_then(|old_app_id| self.active_workers.remove(old_app_id))
+            {
+                old_worker.terminate();
+            }
+        }
+
         self.registry.register(request);
 
         if let Some(mut old_worker) = self.active_workers.remove(&app_id) {
@@ -188,7 +205,11 @@ async fn send_dispatch_frame(
         )));
     }
 
-    match decode_worker_message(&payload)? {
+    let message = decode_worker_message(&payload).map_err(|err| {
+        CoreError::UnexpectedWorkerResponse(format!("failed to decode worker response: {err}"))
+    })?;
+
+    match message {
         WorkerProtocolMessage::DispatchWorkerResult(DispatchWorkerResponse::Ok(payload)) => {
             Ok(DispatchResult::Ok(payload))
         }
