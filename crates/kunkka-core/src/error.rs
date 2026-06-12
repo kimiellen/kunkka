@@ -24,4 +24,25 @@ pub enum CoreError {
 
     #[error("invalid core frame: {0}")]
     InvalidCoreFrame(String),
+
+    #[error("app not found: {0}")]
+    AppNotFound(String),
+
+    #[error("manifest invalid: {0}")]
+    ManifestInvalid(String),
+
+    #[error("worker start failed: {0}")]
+    WorkerStartFailed(String),
+
+    #[error("worker start timeout: {0}")]
+    WorkerStartTimeout(String),
+
+    #[error("worker unavailable: {0}")]
+    WorkerUnavailable(String),
+
+    #[error("dispatch ipc error: {0}")]
+    DispatchIpcError(String),
+
+    #[error("unexpected worker response: {0}")]
+    UnexpectedWorkerResponse(String),
 }

@@ -1,3 +1,4 @@
+pub mod app_manifest;
 pub mod error;
 pub mod ipc_server;
 pub mod runtime;
