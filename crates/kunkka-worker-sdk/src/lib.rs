@@ -11,6 +11,6 @@ pub use codec::{
 pub use error::{Result, WorkerSdkError};
 pub use kunkka_ipc as ipc;
 pub use types::{
-    AppId, RegisterWorkerRequest, RegisterWorkerResponse, WorkerCapability, WorkerId,
-    WorkerProtocolMessage,
+    AppId, DispatchWorkerRequest, DispatchWorkerResponse, RegisterWorkerRequest,
+    RegisterWorkerResponse, WorkerAppError, WorkerCapability, WorkerId, WorkerProtocolMessage,
 };

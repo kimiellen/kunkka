@@ -1,3 +1,4 @@
+use kunkka_ipc::Payload;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -47,7 +48,28 @@ pub struct RegisterWorkerResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DispatchWorkerRequest {
+    pub app_id: AppId,
+    pub method: String,
+    pub payload: Payload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkerAppError {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DispatchWorkerResponse {
+    Ok(Payload),
+    Err(WorkerAppError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WorkerProtocolMessage {
     RegisterWorker(RegisterWorkerRequest),
     RegisterWorkerAccepted(RegisterWorkerResponse),
+    DispatchWorker(DispatchWorkerRequest),
+    DispatchWorkerResult(DispatchWorkerResponse),
 }
