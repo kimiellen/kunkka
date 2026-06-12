@@ -81,10 +81,7 @@ impl NativeHostSession {
         self.ensure_connection().await?;
         let result = self.send_core_control_on_cached_connection(message).await;
 
-        if matches!(
-            result,
-            Err(NativeHostError::CoreIpc(_)) | Err(NativeHostError::CoreUnavailable(_))
-        ) {
+        if result.is_err() {
             self.connection = None;
         }
 

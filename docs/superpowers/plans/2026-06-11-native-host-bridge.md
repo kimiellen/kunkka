@@ -1436,13 +1436,15 @@ Update `crates/kunkka-native-host/Cargo.toml` dependencies and dev-dependencies:
 ```toml
 [dependencies]
 kunkka-ipc = { path = "../kunkka-ipc" }
-tokio.workspace = true
 
 [dev-dependencies]
 kunkka-core = { path = "../kunkka-core" }
 kunkka-worker-sdk = { path = "../kunkka-worker-sdk" }
 tempfile.workspace = true
+tokio.workspace = true
 ```
+
+Enable Tokio's workspace `time` feature for bridge-session timeout-based tests.
 
 Append this implementation to `crates/kunkka-native-host/src/bridge.rs` after the mapping functions:
 
@@ -1498,10 +1500,7 @@ impl NativeHostSession {
         self.ensure_connection().await?;
         let result = self.send_core_control_on_cached_connection(message).await;
 
-        if matches!(
-            result,
-            Err(NativeHostError::CoreIpc(_)) | Err(NativeHostError::CoreUnavailable(_))
-        ) {
+        if result.is_err() {
             self.connection = None;
         }
 
@@ -1600,6 +1599,7 @@ git commit -m "feat: bridge native host session to core"
 **Files:**
 
 - Modify: `crates/kunkka-native-host/src/lib.rs`
+- Modify: `crates/kunkka-native-host/Cargo.toml`
 - Create: `crates/kunkka-native-host/src/host.rs`
 - Modify: `crates/kunkka-native-host/src/main.rs`
 - Create: `crates/kunkka-native-host/tests/host_loop.rs`
@@ -1742,6 +1742,12 @@ Expected: FAIL with unresolved module `kunkka_native_host::host`.
 
 - [ ] **Step 3: Implement host loop and main**
 
+Update `crates/kunkka-native-host/Cargo.toml` dependencies:
+
+```toml
+tokio.workspace = true
+```
+
 Update `crates/kunkka-native-host/src/lib.rs`:
 
 ```rust
@@ -1841,7 +1847,7 @@ Expected: PASS with host loop tests.
 Run:
 
 ```bash
-git add crates/kunkka-native-host/src/lib.rs crates/kunkka-native-host/src/host.rs crates/kunkka-native-host/src/main.rs crates/kunkka-native-host/tests/host_loop.rs
+git add Cargo.lock crates/kunkka-native-host/Cargo.toml crates/kunkka-native-host/src/lib.rs crates/kunkka-native-host/src/host.rs crates/kunkka-native-host/src/main.rs crates/kunkka-native-host/tests/host_loop.rs
 git commit -m "feat: run native messaging host loop"
 ```
 
