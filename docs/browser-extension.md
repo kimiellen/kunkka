@@ -23,6 +23,13 @@ Native host must not implement:
 - shell execution business logic
 - permission decisions
 
+第一版 native-host JSON API：
+
+- request `{ "id": "req-1", "command": "ping" }` -> response `{ "id": "req-1", "ok": true, "result": { "type": "pong" } }`
+- request `{ "id": "req-2", "command": "status" }` -> response `{ "id": "req-2", "ok": true, "result": { "type": "status", "worker_count": 0, "socket_path": "/run/user/1000/kunkka/core.sock", "runtime_ready": true } }`
+- core 不可用时返回 `core_unavailable`。
+- native-host 不自动启动 core。
+
 ## Extension Shell
 
 Future extension shell path:

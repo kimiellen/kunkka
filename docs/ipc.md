@@ -59,10 +59,16 @@ pub struct Payload {
 
 Typed business payload 属于 IPC 之上的 crate。
 
+Typed protocol ownership:
+
+- IPC frame、transport、opaque payload 仍属于 `kunkka-ipc`。
+- 跨 core/frontend 共享的 typed protocol 位于 `kunkka-protocol`。
+- `kunkka.core-control.v1` 当前由 `kunkka-protocol::core_control` 定义。
+
 当前 examples：
 
 - Worker registration payload 位于 `kunkka-worker-sdk`。
-- Core control payload 位于 `kunkka-core`。
+- Core control payload 位于 `kunkka-protocol`。
 - 未来 Native Messaging request envelope 应位于 `kunkka-ipc` 之外。
 - 未来 app request schema 应位于 `kunkka-ipc` 之外。
 

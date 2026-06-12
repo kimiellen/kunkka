@@ -2,6 +2,35 @@
 
 ## 2026-06-11
 
+### Native Host Bridge
+
+Commit:
+
+```text
+c4b360c docs: add native host bridge design
+51b7c86 docs: add native host bridge plan
+e136400 feat: add shared protocol crate
+79fc475 refactor: use shared core control protocol
+afd567e feat: resolve native host core socket
+70cfd6f feat: map native commands to core control
+2d5d141 feat: bridge native host session to core
+0f603fd feat: run native messaging host loop
+866c859 fix: stop native host loop after framing errors
+```
+
+Implemented:
+
+- `kunkka-protocol` shared core-control protocol。
+- `kunkka-native-host` Native Messaging JSON bridge for `ping` and `status`。
+- native-host keeps core IPC connection cached, clears it after IPC/protocol failures, and does not auto-start core。
+
+Verification:
+
+```text
+cargo test -p kunkka-native-host
+cargo clippy -p kunkka-native-host --all-targets -- -D warnings
+```
+
 ### Native Host Core-Control Mapping
 
 Scope:

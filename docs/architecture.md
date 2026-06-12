@@ -97,12 +97,14 @@ Frontend forms 通过 core 和 workers 调用本地能力。
 当前 workspace 已实现以下基础切片：
 
 - `kunkka-ipc`：frame protocol、postcard codec、Unix Domain Socket transport。
+- `kunkka-protocol`：shared core-control protocol。
 - `kunkka-core`：XDG path management、runtime socket setup、single-connection runtime loop、in-memory worker registry、core control protocol。
 - `kunkka-worker-sdk`：worker registration protocol、payload codec、registration client。
+- `kunkka-native-host`：Native Messaging JSON 到 Kunkka IPC core-control 的桥接入口。
 
 Core runtime 当前按 `Payload.schema` 分发请求：
 
 - `kunkka.worker.v1` 处理 worker registration。
 - `kunkka.core-control.v1` 处理 `Ping/Pong` 和 `Status/StatusResult`。
 
-CLI、TUI、native-host bridge、权限系统、worker request dispatch、数据库持久化仍是后续切片。
+CLI、TUI、权限系统、worker request dispatch、数据库持久化仍是后续切片。
