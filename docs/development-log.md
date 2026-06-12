@@ -11,12 +11,25 @@ Scope:
 - Reject mismatched core responses with `UnexpectedCoreResponse`.
 - Do not connect to core/session or implement transport work in this slice.
 
-TDD verification plan:
+TDD and verification:
 
 1. Add integration tests for ping/status mapping and unexpected response rejection.
 2. Run the bridge mapping test first to confirm RED while `bridge` is absent.
 3. Add only the `kunkka-protocol` dependency and minimal bridge module needed for GREEN.
 4. Re-run the bridge mapping test and formatting check before committing.
+
+Commit:
+
+```text
+70cfd6f feat: map native commands to core control
+```
+
+Verification:
+
+```text
+cargo test -p kunkka-native-host --test bridge_mapping
+cargo fmt --all --check
+```
 
 ### Native Messaging JSON and Length Codec
 
