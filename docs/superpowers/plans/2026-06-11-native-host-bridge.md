@@ -1742,6 +1742,14 @@ Expected: FAIL with unresolved module `kunkka_native_host::host`.
 
 - [ ] **Step 3: Implement host loop and main**
 
+Review follow-up for Task 8: `read_native_message` returning
+`NativeHostError::InvalidRequest` represents a Native Messaging framing or stream
+error, such as oversized length, partial length prefix EOF, or body shorter than
+declared length. These errors are not safely recoverable because the stream may
+be misaligned. The host loop must write one `invalid_request` response and then
+exit normally. Decode/schema errors from a fully read frame remain recoverable:
+write an `invalid_request` response and continue reading the next frame.
+
 Update `crates/kunkka-native-host/Cargo.toml` dependencies:
 
 ```toml
@@ -1784,7 +1792,7 @@ pub async fn run_native_host<R: Read, W: Write>(
             Err(NativeHostError::InvalidRequest(message)) => {
                 let response = error_response(None, NativeErrorCode::InvalidRequest, message);
                 write_native_message(writer, &response)?;
-                continue;
+                return Ok(());
             }
             Err(err) => return Err(err),
         };

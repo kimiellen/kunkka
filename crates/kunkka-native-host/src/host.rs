@@ -16,7 +16,7 @@ pub async fn run_native_host<R: Read, W: Write>(
             Err(NativeHostError::InvalidRequest(message)) => {
                 let response = error_response(None, NativeErrorCode::InvalidRequest, message);
                 write_native_message(writer, &response)?;
-                continue;
+                return Ok(());
             }
             Err(err) => return Err(err),
         };
