@@ -16,6 +16,7 @@ pub struct RegisteredWorker {
 #[derive(Debug, Default)]
 pub struct WorkerRegistry {
     workers: BTreeMap<WorkerId, RegisteredWorker>,
+    app_workers: BTreeMap<AppId, WorkerId>,
 }
 
 impl WorkerRegistry {
@@ -25,6 +26,21 @@ impl WorkerRegistry {
 
     pub fn register(&mut self, request: RegisterWorkerRequest) -> RegisterWorkerResponse {
         let worker_id = request.worker_id.clone();
+        let app_id = request.app_id.clone();
+
+        if let Some(existing) = self.workers.get(&worker_id) {
+            if existing.app_id != app_id
+                && self.app_workers.get(&existing.app_id) == Some(&worker_id)
+            {
+                self.app_workers.remove(&existing.app_id);
+            }
+        }
+
+        if let Some(old_worker_id) = self.app_workers.insert(app_id.clone(), worker_id.clone()) {
+            if old_worker_id != worker_id {
+                self.workers.remove(&old_worker_id);
+            }
+        }
 
         let registered = RegisteredWorker {
             worker_id: request.worker_id,
@@ -41,7 +57,25 @@ impl WorkerRegistry {
         }
     }
 
+    pub fn remove(&mut self, worker_id: &WorkerId) -> Option<RegisteredWorker> {
+        let registered = self.workers.remove(worker_id)?;
+        if self.app_workers.get(&registered.app_id) == Some(worker_id) {
+            self.app_workers.remove(&registered.app_id);
+        }
+        Some(registered)
+    }
+
+    pub fn remove_by_app_id(&mut self, app_id: &AppId) -> Option<RegisteredWorker> {
+        let worker_id = self.app_workers.remove(app_id)?;
+        self.workers.remove(&worker_id)
+    }
+
     pub fn get(&self, worker_id: &WorkerId) -> Option<&RegisteredWorker> {
+        self.workers.get(worker_id)
+    }
+
+    pub fn get_by_app_id(&self, app_id: &AppId) -> Option<&RegisteredWorker> {
+        let worker_id = self.app_workers.get(app_id)?;
         self.workers.get(worker_id)
     }
 
