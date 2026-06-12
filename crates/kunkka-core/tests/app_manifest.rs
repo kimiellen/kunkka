@@ -29,6 +29,13 @@ fn write_manifest(paths: &KunkkaPaths, name: &str, body: &str) {
     fs::write(apps_dir.join(name), body).unwrap();
 }
 
+fn manifest_invalid_message(err: CoreError) -> String {
+    match err {
+        CoreError::ManifestInvalid(message) => message,
+        other => panic!("expected ManifestInvalid, got {other:?}"),
+    }
+}
+
 #[test]
 fn loads_app_manifest_from_xdg_config_apps_dir() {
     let (_root, paths) = test_paths();
@@ -148,4 +155,107 @@ fn loads_manifest_file_directly() {
     let manifest = AppManifest::load_file(paths.config_dir.join("apps/notes.json")).unwrap();
 
     assert_eq!(manifest.app_id.as_str(), "notes");
+}
+
+#[test]
+fn rejects_duplicate_app_ids_across_manifest_files() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "a.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker-a",
+                "args": []
+            }
+        }"#,
+    );
+    write_manifest(
+        &paths,
+        "b.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker-b",
+                "args": []
+            }
+        }"#,
+    );
+
+    let message = manifest_invalid_message(AppRegistry::load(&paths).unwrap_err());
+
+    assert!(message.contains("duplicate app_id"));
+    assert!(message.contains("notes"));
+}
+
+#[test]
+fn rejects_json_directory_entry() {
+    let (_root, paths) = test_paths();
+    let apps_dir = paths.config_dir.join("apps");
+    fs::create_dir_all(apps_dir.join("not-a-file.json")).unwrap();
+
+    let message = manifest_invalid_message(AppRegistry::load(&paths).unwrap_err());
+
+    assert!(message.contains("not-a-file.json"));
+    assert!(message.contains("not a file"));
+}
+
+#[test]
+fn rejects_blank_app_id() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "   ",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": []
+            }
+        }"#,
+    );
+
+    let message = manifest_invalid_message(AppRegistry::load(&paths).unwrap_err());
+
+    assert!(message.contains("app_id"));
+}
+
+#[test]
+fn rejects_blank_worker_program() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "   ",
+                "args": []
+            }
+        }"#,
+    );
+
+    let message = manifest_invalid_message(AppRegistry::load(&paths).unwrap_err());
+
+    assert!(message.contains("worker.program"));
+}
+
+#[test]
+fn rejects_manifest_missing_worker_args() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker"
+            }
+        }"#,
+    );
+
+    let message = manifest_invalid_message(AppRegistry::load(&paths).unwrap_err());
+
+    assert!(message.contains("worker.args"));
 }

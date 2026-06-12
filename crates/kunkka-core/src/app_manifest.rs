@@ -2,6 +2,7 @@ use crate::xdg::KunkkaPaths;
 use crate::{CoreError, Result};
 use kunkka_worker_sdk::AppId;
 use serde::Deserialize;
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,25 +10,42 @@ use std::path::{Path, PathBuf};
 pub const DEFAULT_IDLE_TIMEOUT_MS: u64 = 300_000;
 pub const DEFAULT_STARTUP_TIMEOUT_MS: u64 = 10_000;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppManifest {
     pub app_id: AppId,
     pub worker: WorkerCommand,
-    #[serde(default = "default_idle_timeout_ms")]
     pub idle_timeout_ms: u64,
-    #[serde(default = "default_startup_timeout_ms")]
     pub startup_timeout_ms: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkerCommand {
-    #[serde(default)]
     pub program: String,
     pub args: Vec<String>,
-    #[serde(default)]
     pub env: BTreeMap<String, String>,
-    #[serde(default)]
     pub cwd: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawAppManifest {
+    app_id: AppId,
+    worker: RawWorkerCommand,
+    #[serde(default = "default_idle_timeout_ms")]
+    idle_timeout_ms: u64,
+    #[serde(default = "default_startup_timeout_ms")]
+    startup_timeout_ms: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawWorkerCommand {
+    #[serde(default)]
+    program: Option<String>,
+    #[serde(default)]
+    args: Option<Vec<String>>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+    #[serde(default)]
+    cwd: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -39,21 +57,43 @@ impl AppManifest {
     pub fn load_file(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let bytes = fs::read(path)?;
-        let manifest: Self = serde_json::from_slice(&bytes)
+        let raw: RawAppManifest = serde_json::from_slice(&bytes)
             .map_err(|err| CoreError::ManifestInvalid(format!("{}: {err}", path.display())))?;
+        let manifest = Self::from_raw(raw, path)?;
         manifest.validate(path)?;
         Ok(manifest)
     }
 
+    fn from_raw(raw: RawAppManifest, path: &Path) -> Result<Self> {
+        let program = raw.worker.program.ok_or_else(|| {
+            CoreError::ManifestInvalid(format!("{}: worker.program is required", path.display()))
+        })?;
+        let args = raw.worker.args.ok_or_else(|| {
+            CoreError::ManifestInvalid(format!("{}: worker.args is required", path.display()))
+        })?;
+
+        Ok(Self {
+            app_id: raw.app_id,
+            worker: WorkerCommand {
+                program,
+                args,
+                env: raw.worker.env,
+                cwd: raw.worker.cwd,
+            },
+            idle_timeout_ms: raw.idle_timeout_ms,
+            startup_timeout_ms: raw.startup_timeout_ms,
+        })
+    }
+
     fn validate(&self, path: &Path) -> Result<()> {
-        if self.app_id.as_str().is_empty() {
+        if self.app_id.as_str().trim().is_empty() {
             return Err(CoreError::ManifestInvalid(format!(
                 "{}: app_id is required",
                 path.display()
             )));
         }
 
-        if self.worker.program.is_empty() {
+        if self.worker.program.trim().is_empty() {
             return Err(CoreError::ManifestInvalid(format!(
                 "{}: worker.program is required",
                 path.display()
@@ -71,16 +111,39 @@ impl AppRegistry {
             return Ok(Self::default());
         }
 
-        let mut manifests = BTreeMap::new();
+        let mut manifest_paths = Vec::new();
         for entry in fs::read_dir(&apps_dir)? {
             let entry = entry?;
             let path = entry.path();
             if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                 continue;
             }
+            if !entry.file_type()?.is_file() {
+                return Err(CoreError::ManifestInvalid(format!(
+                    "{}: not a file",
+                    path.display()
+                )));
+            }
 
+            manifest_paths.push(path);
+        }
+        manifest_paths.sort();
+
+        let mut manifests = BTreeMap::new();
+        for path in manifest_paths {
             let manifest = AppManifest::load_file(&path)?;
-            manifests.insert(manifest.app_id.clone(), manifest);
+            match manifests.entry(manifest.app_id.clone()) {
+                Entry::Vacant(entry) => {
+                    entry.insert(manifest);
+                }
+                Entry::Occupied(_) => {
+                    return Err(CoreError::ManifestInvalid(format!(
+                        "duplicate app_id {} in {}",
+                        manifest.app_id.as_str(),
+                        path.display()
+                    )));
+                }
+            }
         }
 
         Ok(Self { manifests })
