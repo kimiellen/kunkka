@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+kunkka-protocol = { path = "../kunkka-protocol" }
 libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true

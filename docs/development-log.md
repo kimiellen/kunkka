@@ -2,6 +2,22 @@
 
 ## 2026-06-11
 
+### Native Host Core-Control Mapping
+
+Scope:
+
+- Add a bridge mapping layer in `kunkka-native-host` from native commands to `kunkka-protocol` core-control messages.
+- Convert expected core-control responses back into native host results.
+- Reject mismatched core responses with `UnexpectedCoreResponse`.
+- Do not connect to core/session or implement transport work in this slice.
+
+TDD verification plan:
+
+1. Add integration tests for ping/status mapping and unexpected response rejection.
+2. Run the bridge mapping test first to confirm RED while `bridge` is absent.
+3. Add only the `kunkka-protocol` dependency and minimal bridge module needed for GREEN.
+4. Re-run the bridge mapping test and formatting check before committing.
+
 ### Native Messaging JSON and Length Codec
 
 Scope:
