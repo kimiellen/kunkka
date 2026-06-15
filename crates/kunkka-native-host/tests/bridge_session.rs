@@ -36,6 +36,14 @@ fn test_paths() -> (TempDir, KunkkaPaths) {
     (root, paths)
 }
 
+fn write_manifest(paths: &KunkkaPaths, body: &str) {
+    use std::fs;
+
+    let apps_dir = paths.config_dir.join("apps");
+    std::fs::create_dir_all(&apps_dir).unwrap();
+    fs::write(apps_dir.join("example-app.json"), body).unwrap();
+}
+
 fn worker_request() -> RegisterWorkerRequest {
     RegisterWorkerRequest {
         worker_id: WorkerId::new("worker-1"),
@@ -283,6 +291,21 @@ fn dispatch_request(id: &str) -> NativeRequest {
 #[tokio::test]
 async fn session_reuses_connection_for_status_then_dispatch() {
     let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        r#"{
+        "app_id": "example-app",
+        "worker": {
+            "program": "/usr/bin/example-worker",
+            "args": []
+        },
+        "permissions": {
+            "frontend_dispatch": {
+                "allowed_methods": ["search"]
+            }
+        }
+    }"#,
+    );
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let worker_task = tokio::spawn({
