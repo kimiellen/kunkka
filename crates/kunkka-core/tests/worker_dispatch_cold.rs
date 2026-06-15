@@ -40,7 +40,7 @@ fn write_manifest(paths: &KunkkaPaths, body: &str) {
     fs::write(apps_dir.join("notes.json"), body).unwrap();
 }
 
-fn worker_fixture_manifest(mode: &str, startup_timeout_ms: u64) -> String {
+fn worker_fixture_manifest(mode: &str, idle_timeout_ms: u64, startup_timeout_ms: u64) -> String {
     let current_exe = std::env::current_exe().unwrap();
     format!(
         r#"{{
@@ -50,11 +50,12 @@ fn worker_fixture_manifest(mode: &str, startup_timeout_ms: u64) -> String {
                 "args": ["worker_fixture_entrypoint", "--exact", "--nocapture"],
                 "env": {{ "KUNKKA_WORKER_FIXTURE": {} }}
             }},
-            "idle_timeout_ms": 300000,
+            "idle_timeout_ms": {},
             "startup_timeout_ms": {}
         }}"#,
         serde_json::to_string(current_exe.to_str().unwrap()).unwrap(),
         serde_json::to_string(mode).unwrap(),
+        idle_timeout_ms,
         startup_timeout_ms
     )
 }
@@ -134,7 +135,7 @@ fn worker_fixture_entrypoint() {
 #[tokio::test]
 async fn cold_dispatch_starts_worker_and_returns_payload() {
     let (_root, paths) = test_paths();
-    write_manifest(&paths, &worker_fixture_manifest("ok", 5000));
+    write_manifest(&paths, &worker_fixture_manifest("ok", 300_000, 5000));
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let result = tokio::time::timeout(
@@ -156,7 +157,7 @@ async fn cold_dispatch_starts_worker_and_returns_payload() {
 #[tokio::test]
 async fn cold_dispatch_returns_worker_app_error() {
     let (_root, paths) = test_paths();
-    write_manifest(&paths, &worker_fixture_manifest("app-error", 5000));
+    write_manifest(&paths, &worker_fixture_manifest("app-error", 300_000, 5000));
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let result = tokio::time::timeout(
@@ -231,7 +232,10 @@ async fn manifest_env_cannot_override_core_worker_env() {
 #[tokio::test]
 async fn cold_dispatch_rejects_mismatched_worker_registration() {
     let (_root, paths) = test_paths();
-    write_manifest(&paths, &worker_fixture_manifest("wrong-registration", 50));
+    write_manifest(
+        &paths,
+        &worker_fixture_manifest("wrong-registration", 300_000, 50),
+    );
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let err = tokio::time::timeout(
@@ -257,7 +261,7 @@ async fn cold_dispatch_rejects_mismatched_worker_registration() {
 #[tokio::test]
 async fn cold_dispatch_ignores_unrelated_registration_while_waiting_for_worker() {
     let (_root, paths) = test_paths();
-    write_manifest(&paths, &worker_fixture_manifest("ok", 5000));
+    write_manifest(&paths, &worker_fixture_manifest("ok", 300_000, 5000));
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let stray_socket_path = paths.socket_path.clone();
@@ -310,7 +314,7 @@ async fn cold_dispatch_ignores_unrelated_registration_while_waiting_for_worker()
 #[tokio::test]
 async fn cold_dispatch_ignores_silent_connection_while_waiting_for_worker() {
     let (_root, paths) = test_paths();
-    write_manifest(&paths, &worker_fixture_manifest("ok", 5000));
+    write_manifest(&paths, &worker_fixture_manifest("ok", 300_000, 5000));
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let stray = IpcConnection::connect(&paths.socket_path).await.unwrap();
@@ -380,7 +384,10 @@ async fn invalid_worker_executable_returns_start_failed() {
 #[tokio::test]
 async fn worker_that_never_registers_returns_start_timeout() {
     let (_root, paths) = test_paths();
-    write_manifest(&paths, &worker_fixture_manifest("never-register", 50));
+    write_manifest(
+        &paths,
+        &worker_fixture_manifest("never-register", 300_000, 50),
+    );
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let err = tokio::time::timeout(
@@ -396,4 +403,36 @@ async fn worker_that_never_registers_returns_start_timeout() {
         CoreError::WorkerStartTimeout(message) if message.contains("notes")
     ));
     assert!(!runtime.worker_manager().is_active(&AppId::new("notes")));
+}
+
+#[tokio::test]
+async fn dispatch_after_idle_cleanup_restarts_worker() {
+    let (_root, paths) = test_paths();
+    write_manifest(&paths, &worker_fixture_manifest("ok", 1, 5000));
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let first = runtime
+        .dispatch(
+            AppId::new("notes"),
+            "search".to_string(),
+            payload(br#"{"query":"first"}"#),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first, DispatchResult::Ok(payload(br#"{"items":[]}"#)));
+
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    runtime.reap_idle_workers();
+    assert!(!runtime.worker_manager().is_active(&AppId::new("notes")));
+
+    let second = runtime
+        .dispatch(
+            AppId::new("notes"),
+            "search".to_string(),
+            payload(br#"{"query":"second"}"#),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second, DispatchResult::Ok(payload(br#"{"items":[]}"#)));
+    assert!(runtime.worker_manager().is_active(&AppId::new("notes")));
 }

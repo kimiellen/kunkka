@@ -39,6 +39,10 @@ impl CoreRuntime {
         &self.worker_manager
     }
 
+    pub fn reap_idle_workers(&mut self) {
+        self.worker_manager.reap_idle_workers();
+    }
+
     pub async fn dispatch(
         &mut self,
         app_id: AppId,

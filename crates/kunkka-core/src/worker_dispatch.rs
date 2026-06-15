@@ -33,9 +33,7 @@ struct ActiveWorker {
     worker_id: WorkerId,
     connection: IpcConnection,
     child: Option<Child>,
-    #[allow(dead_code)]
     last_used_at: Instant,
-    #[allow(dead_code)]
     idle_timeout: Duration,
 }
 
@@ -70,6 +68,28 @@ impl WorkerManager {
 
     pub fn active_worker_count(&self) -> usize {
         self.active_workers.len()
+    }
+
+    pub fn reap_idle_workers(&mut self) {
+        let now = Instant::now();
+        let expired: Vec<AppId> = self
+            .active_workers
+            .iter()
+            .filter_map(|(app_id, worker)| {
+                if now.duration_since(worker.last_used_at) >= worker.idle_timeout {
+                    Some(app_id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for app_id in expired {
+            if let Some(mut worker) = self.active_workers.remove(&app_id) {
+                worker.terminate();
+            }
+            self.registry.remove_by_app_id(&app_id);
+        }
     }
 
     pub fn register_active_for_test(
