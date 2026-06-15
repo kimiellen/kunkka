@@ -1,6 +1,7 @@
 pub mod app_manifest;
 pub mod error;
 pub mod ipc_server;
+pub mod permissions;
 pub mod runtime;
 pub mod worker_dispatch;
 pub mod worker_registry;

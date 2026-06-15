@@ -51,3 +51,16 @@ Permission enforcement is not implemented yet.
 Frontend dispatch is currently allowed by an explicit temporary decision inside `kunkka-core`. This keeps the permission decision owner in core and avoids native-host-side authorization logic.
 
 The temporary allow decision must be replaced by the real permission system before Kunkka treats worker invocation as enforceable per subject or per app.
+
+## Implementation Slice: Frontend Dispatch Method Allowlist
+
+`kunkka-core` owns the first concrete permission decision helper for frontend-to-worker dispatch. The helper reads `AppManifest.permissions.frontend_dispatch.allowed_methods` and allows only exact method-name matches.
+
+Decision rules for this slice:
+
+- If the requested method is present in `allowed_methods`, core returns allow.
+- If the method is absent or the allowlist is empty, core returns deny with code `permission_denied`.
+- Method matching is case-sensitive.
+- Method matching does not trim or normalize whitespace.
+
+This slice only introduces the reusable decision API; wiring runtime enforcement happens in a later task.
