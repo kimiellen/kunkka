@@ -44,13 +44,20 @@ Controlled capabilities include:
 
 ## Current Status
 
-Permission enforcement is not implemented yet.
+Permission enforcement is partially implemented.
+
+Frontend dispatch is now checked against manifest-declared `permissions.frontend_dispatch.allowed_methods`. If the method is not in the allowed list, core returns `permission_denied`. If no manifest exists for the app, core returns `app_not_found`.
+
+Worker invocation, database access, file access, shell execution, and other controlled capabilities are not yet enforced.
 
 ## Current Frontend Dispatch Status
 
-Frontend dispatch is currently allowed by an explicit temporary decision inside `kunkka-core`. This keeps the permission decision owner in core and avoids native-host-side authorization logic.
+Frontend dispatch permission is checked in `kunkka-core` against the app manifest:
 
-The temporary allow decision must be replaced by the real permission system before Kunkka treats worker invocation as enforceable per subject or per app.
+- `permissions.frontend_dispatch.allowed_methods` declares which methods are allowed.
+- Missing `permissions`, missing `frontend_dispatch`, or empty `allowed_methods` means deny all.
+- Permission decision is in `crates/kunkka-core/src/permissions.rs`.
+- `native-host` does not make permission decisions.
 
 ## Implementation Slice: Frontend Dispatch Method Allowlist
 

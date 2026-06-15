@@ -39,7 +39,10 @@ fn denies_method_not_in_allowed_methods() {
     let decision = decide_frontend_dispatch(&manifest, "delete");
     assert!(matches!(
         decision,
-        PermissionDecision::Deny { code: "permission_denied", .. }
+        PermissionDecision::Deny {
+            code: "permission_denied",
+            ..
+        }
     ));
 }
 
@@ -48,7 +51,10 @@ fn denies_when_allowed_methods_is_empty() {
     let manifest = manifest_with_methods(&[]);
     assert!(matches!(
         decide_frontend_dispatch(&manifest, "search"),
-        PermissionDecision::Deny { code: "permission_denied", .. }
+        PermissionDecision::Deny {
+            code: "permission_denied",
+            ..
+        }
     ));
 }
 
@@ -57,7 +63,10 @@ fn method_matching_is_case_sensitive() {
     let manifest = manifest_with_methods(&["Search"]);
     assert!(matches!(
         decide_frontend_dispatch(&manifest, "search"),
-        PermissionDecision::Deny { code: "permission_denied", .. }
+        PermissionDecision::Deny {
+            code: "permission_denied",
+            ..
+        }
     ));
 }
 
@@ -66,6 +75,9 @@ fn method_matching_does_not_trim() {
     let manifest = manifest_with_methods(&["search"]);
     assert!(matches!(
         decide_frontend_dispatch(&manifest, " search"),
-        PermissionDecision::Deny { code: "permission_denied", .. }
+        PermissionDecision::Deny {
+            code: "permission_denied",
+            ..
+        }
     ));
 }

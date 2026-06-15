@@ -139,7 +139,11 @@ fn missing_permissions_defaults_to_empty_allowed_methods() {
     let registry = AppRegistry::load(&paths).unwrap();
     let manifest = registry.get("notes").unwrap();
 
-    assert!(manifest.permissions.frontend_dispatch.allowed_methods.is_empty());
+    assert!(manifest
+        .permissions
+        .frontend_dispatch
+        .allowed_methods
+        .is_empty());
 }
 
 #[test]
@@ -161,7 +165,11 @@ fn missing_frontend_dispatch_defaults_to_empty_allowed_methods() {
     let registry = AppRegistry::load(&paths).unwrap();
     let manifest = registry.get("notes").unwrap();
 
-    assert!(manifest.permissions.frontend_dispatch.allowed_methods.is_empty());
+    assert!(manifest
+        .permissions
+        .frontend_dispatch
+        .allowed_methods
+        .is_empty());
 }
 
 #[test]

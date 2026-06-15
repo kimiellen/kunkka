@@ -1,5 +1,23 @@
 # Kunkka Development Log
 
+### Manifest Frontend Dispatch Permissions
+
+Implemented:
+
+- `AppPermissions` and `FrontendDispatchPermissions` types in `kunkka-core/src/app_manifest.rs`.
+- `permissions.rs` module with `decide_frontend_dispatch` and `PermissionDecision`.
+- Runtime handler uses manifest permissions instead of `allow_frontend_dispatch_v1()`.
+- Deny-by-default: missing permissions, empty `allowed_methods`, or method not in list returns `permission_denied`.
+- Manifest loading validates that `allowed_methods` does not contain blank strings.
+
+Verification:
+
+```text
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ## 2026-06-15
 
 ### Frontend Dispatch

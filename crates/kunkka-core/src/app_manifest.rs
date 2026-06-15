@@ -27,30 +27,14 @@ pub struct WorkerCommand {
     pub cwd: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AppPermissions {
     pub frontend_dispatch: FrontendDispatchPermissions,
 }
 
-impl Default for AppPermissions {
-    fn default() -> Self {
-        Self {
-            frontend_dispatch: FrontendDispatchPermissions::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FrontendDispatchPermissions {
     pub allowed_methods: Vec<String>,
-}
-
-impl Default for FrontendDispatchPermissions {
-    fn default() -> Self {
-        Self {
-            allowed_methods: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
