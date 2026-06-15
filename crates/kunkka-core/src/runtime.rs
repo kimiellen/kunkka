@@ -212,8 +212,19 @@ async fn handle_frontend_dispatch_request(
     if request.method.is_empty() {
         return platform_error("invalid_request", "dispatch method is empty");
     }
-    if !allow_frontend_dispatch_v1(&request) {
-        return platform_error("permission_denied", "frontend dispatch is not allowed");
+
+    let Some(manifest) = worker_manager.app_registry().get(&request.app_id) else {
+        return platform_error(
+            "app_not_found",
+            format!("app not found: {}", request.app_id),
+        );
+    };
+
+    match crate::permissions::decide_frontend_dispatch(manifest, &request.method) {
+        crate::permissions::PermissionDecision::Deny { code, message } => {
+            return platform_error(code, message);
+        }
+        crate::permissions::PermissionDecision::Allow => {}
     }
 
     match worker_manager
@@ -231,11 +242,6 @@ async fn handle_frontend_dispatch_request(
         }
         Err(err) => platform_error(dispatch_platform_error_code(&err), err.to_string()),
     }
-}
-
-// TODO(permission): replace with real permission system before production
-fn allow_frontend_dispatch_v1(_request: &FrontendDispatchRequest) -> bool {
-    true
 }
 
 fn platform_error(code: impl Into<String>, message: impl Into<String>) -> FrontendDispatchResponse {

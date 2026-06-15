@@ -62,6 +62,10 @@ impl WorkerManager {
         &self.registry
     }
 
+    pub fn app_registry(&self) -> &AppRegistry {
+        &self.app_registry
+    }
+
     pub fn is_active(&self, app_id: &AppId) -> bool {
         self.active_workers.contains_key(app_id)
     }

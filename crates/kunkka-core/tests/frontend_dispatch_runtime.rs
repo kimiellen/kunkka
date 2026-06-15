@@ -41,6 +41,13 @@ fn test_paths() -> (TempDir, KunkkaPaths) {
     (root, paths)
 }
 
+fn write_manifest(paths: &KunkkaPaths, body: &str) {
+    use std::fs;
+    let apps_dir = paths.config_dir.join("apps");
+    std::fs::create_dir_all(&apps_dir).unwrap();
+    fs::write(apps_dir.join("notes.json"), body).unwrap();
+}
+
 fn json_payload(bytes: &[u8]) -> Payload {
     Payload {
         bytes: bytes.to_vec(),
@@ -215,6 +222,57 @@ async fn frontend_dispatch_maps_missing_manifest_to_platform_error() {
     };
     assert_eq!(code, "app_not_found");
     assert!(message.contains("missing"));
+}
+
+#[tokio::test]
+async fn frontend_dispatch_denies_method_not_in_manifest_permissions() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": ["--serve"]
+            },
+            "permissions": {
+                "frontend_dispatch": {
+                    "allowed_methods": ["open"]
+                }
+            }
+        }"#,
+    );
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let frontend_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+            connection
+                .send_frame(&dispatch_frame(30, "notes", "search"))
+                .await
+                .unwrap();
+            connection.recv_frame().await.unwrap().unwrap()
+        }
+    });
+
+    wait_for(runtime.run_once()).await.unwrap();
+
+    let Frame::Response { payload, .. } = wait_for(frontend_task).await.unwrap() else {
+        panic!("expected response frame");
+    };
+    let FrontendDispatchMessage::DispatchResult(FrontendDispatchResponse::PlatformError {
+        code,
+        message,
+    }) = decode_frontend_dispatch_message(&payload).unwrap()
+    else {
+        panic!("expected platform error");
+    };
+    assert_eq!(code, "permission_denied");
+    assert!(message.contains("search"));
+    assert!(message.contains("notes"));
+    assert!(!runtime.worker_manager().is_active(&AppId::new("notes")));
 }
 
 #[tokio::test]
