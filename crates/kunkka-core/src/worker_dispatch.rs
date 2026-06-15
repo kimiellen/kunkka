@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
+use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,14 +110,24 @@ impl WorkerManager {
         let mut child = spawn_worker(&manifest, &self.socket_path)?;
         let startup_timeout = Duration::from_millis(manifest.startup_timeout_ms);
         let registration = timeout(startup_timeout, async {
-            loop {
-                let mut connection = server.accept_one().await?;
-                let Some(frame) = connection.recv_frame().await? else {
-                    continue;
-                };
+            let mut candidates = JoinSet::new();
 
-                if registration_matches_expected_app(&frame, app_id) {
-                    return Ok::<_, CoreError>((frame, connection));
+            loop {
+                tokio::select! {
+                    accepted = server.accept_one() => {
+                        let connection = accepted?;
+                        candidates.spawn(read_registration_candidate(connection));
+                    }
+                    Some(candidate) = candidates.join_next(), if !candidates.is_empty() => {
+                        let Ok(Some((frame, connection))) = candidate else {
+                            continue;
+                        };
+
+                        if registration_matches_expected_app(&frame, app_id) {
+                            candidates.abort_all();
+                            return Ok::<_, CoreError>((frame, connection));
+                        }
+                    }
                 }
             }
         })
@@ -364,6 +375,13 @@ fn spawn_worker(manifest: &AppManifest, socket_path: &Path) -> Result<Child> {
             manifest.app_id.as_str()
         ))
     })
+}
+
+async fn read_registration_candidate(
+    mut connection: IpcConnection,
+) -> Option<(Frame, IpcConnection)> {
+    let frame = connection.recv_frame().await.ok()??;
+    Some((frame, connection))
 }
 
 fn registration_matches_expected_app(frame: &Frame, expected_app_id: &AppId) -> bool {

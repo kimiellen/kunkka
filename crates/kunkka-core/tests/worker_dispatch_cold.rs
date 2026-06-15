@@ -308,6 +308,31 @@ async fn cold_dispatch_ignores_unrelated_registration_while_waiting_for_worker()
 }
 
 #[tokio::test]
+async fn cold_dispatch_ignores_silent_connection_while_waiting_for_worker() {
+    let (_root, paths) = test_paths();
+    write_manifest(&paths, &worker_fixture_manifest("ok", 5000));
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let stray = IpcConnection::connect(&paths.socket_path).await.unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(2),
+        runtime.dispatch(
+            AppId::new("notes"),
+            "search".to_string(),
+            payload(br#"{"query":"kunkka"}"#),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(result, DispatchResult::Ok(payload(br#"{"items":[]}"#)));
+    assert!(runtime.worker_manager().is_active(&AppId::new("notes")));
+    drop(stray);
+}
+
+#[tokio::test]
 async fn missing_manifest_returns_app_not_found() {
     let (_root, paths) = test_paths();
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
