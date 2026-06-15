@@ -72,6 +72,23 @@ fn worker_fixture_entrypoint() {
         }
 
         let socket_path = std::env::var("KUNKKA_CORE_SOCKET").unwrap();
+        if mode == "wrong-registration" {
+            let mut client = WorkerClient::connect(&socket_path, WorkerId::new("wrong"))
+                .await
+                .unwrap();
+            let _ = client
+                .register(RegisterWorkerRequest {
+                    worker_id: WorkerId::new("wrong"),
+                    app_id: AppId::new("wrong"),
+                    capabilities: vec![WorkerCapability {
+                        name: "wrong.search".to_string(),
+                        description: None,
+                    }],
+                })
+                .await;
+            return;
+        }
+
         let app_id = std::env::var("KUNKKA_APP_ID").unwrap();
         let worker_id = std::env::var("KUNKKA_WORKER_ID").unwrap();
         let mut client = WorkerClient::connect(&socket_path, WorkerId::new(worker_id.clone()))
@@ -172,6 +189,7 @@ async fn manifest_env_cannot_override_core_worker_env() {
                     "args": ["worker_fixture_entrypoint", "--exact", "--nocapture"],
                     "env": {{
                         "KUNKKA_WORKER_FIXTURE": "ok",
+                        "KUNKKA_CORE_SOCKET": "/path/that/does/not/exist/core.sock",
                         "KUNKKA_APP_ID": "wrong-app",
                         "KUNKKA_WORKER_ID": "wrong-worker"
                     }}
@@ -207,6 +225,34 @@ async fn manifest_env_cannot_override_core_worker_env() {
             .as_str(),
         "notes"
     );
+}
+
+#[tokio::test]
+async fn cold_dispatch_rejects_mismatched_worker_registration() {
+    let (_root, paths) = test_paths();
+    write_manifest(&paths, &worker_fixture_manifest("wrong-registration", 5000));
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let err = tokio::time::timeout(
+        Duration::from_secs(10),
+        runtime.dispatch(AppId::new("notes"), "search".to_string(), payload(b"{}")),
+    )
+    .await
+    .unwrap()
+    .unwrap_err();
+
+    assert!(matches!(
+        err,
+        CoreError::UnexpectedWorkerResponse(message)
+            if (message.contains("registration") || message.contains("mismatch"))
+                && message.contains("notes")
+    ));
+    assert!(!runtime.worker_manager().is_active(&AppId::new("notes")));
+    assert!(!runtime.worker_manager().is_active(&AppId::new("wrong")));
+    assert!(runtime
+        .registry()
+        .get_by_app_id(&AppId::new("wrong"))
+        .is_none());
 }
 
 #[tokio::test]

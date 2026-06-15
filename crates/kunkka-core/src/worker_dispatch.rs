@@ -119,11 +119,12 @@ impl WorkerManager {
 
         match registration {
             Ok(Ok((frame, connection))) => {
-                self.handle_registration_connection(
+                self.handle_registration_connection_with_expected_app(
                     frame,
                     connection,
                     Some(child),
                     manifest.idle_timeout_ms,
+                    Some(app_id),
                 )
                 .await
             }
@@ -191,9 +192,27 @@ impl WorkerManager {
     pub async fn handle_registration_connection(
         &mut self,
         frame: Frame,
+        connection: IpcConnection,
+        child: Option<Child>,
+        idle_timeout_ms: u64,
+    ) -> Result<()> {
+        self.handle_registration_connection_with_expected_app(
+            frame,
+            connection,
+            child,
+            idle_timeout_ms,
+            None,
+        )
+        .await
+    }
+
+    async fn handle_registration_connection_with_expected_app(
+        &mut self,
+        frame: Frame,
         mut connection: IpcConnection,
         mut child: Option<Child>,
         idle_timeout_ms: u64,
+        expected_app_id: Option<&AppId>,
     ) -> Result<()> {
         let result = async {
             let Frame::Request {
@@ -216,6 +235,19 @@ impl WorkerManager {
                     "expected worker registration request".to_string(),
                 ));
             };
+
+            if let Some(expected_app_id) = expected_app_id {
+                if request.app_id != *expected_app_id
+                    || request.worker_id.as_str() != expected_app_id.as_str()
+                {
+                    return Err(CoreError::UnexpectedWorkerResponse(format!(
+                        "worker registration mismatch for app {}: got app {} worker {}",
+                        expected_app_id.as_str(),
+                        request.app_id.as_str(),
+                        request.worker_id.as_str()
+                    )));
+                }
+            }
 
             let response = RegisterWorkerResponse {
                 worker_id: request.worker_id.clone(),
