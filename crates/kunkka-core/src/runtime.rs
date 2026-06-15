@@ -10,6 +10,10 @@ use kunkka_protocol::core_control::{
     CoreStatusResponse, CORE_CONTROL_SCHEMA,
 };
 use kunkka_worker_sdk::{AppId, WORKER_PROTOCOL_SCHEMA};
+use std::time::Duration;
+use tokio::time::{interval, MissedTickBehavior};
+
+const IDLE_REAP_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct CoreRuntime {
     server: CoreIpcServer,
@@ -55,89 +59,115 @@ impl CoreRuntime {
     }
 
     pub async fn run_once(&mut self) -> Result<()> {
-        let mut connection = self.server.accept_one().await?;
-        let Some(first_frame) = connection.recv_frame().await? else {
-            return Ok(());
-        };
-
-        match frame_schema(&first_frame) {
-            Some(WORKER_PROTOCOL_SCHEMA) => {
-                self.worker_manager
-                    .handle_registration_connection(first_frame, connection, None, 300_000)
-                    .await
-            }
-            Some(CORE_CONTROL_SCHEMA) => self.run_control_connection(connection, first_frame).await,
-            Some(schema) => Err(CoreError::InvalidCoreFrame(format!(
-                "unknown payload schema: {schema}"
-            ))),
-            None => Err(CoreError::InvalidCoreFrame(
-                "missing payload schema".to_string(),
-            )),
-        }
+        let connection = self.server.accept_one().await?;
+        run_connection(&self.server, &mut self.worker_manager, connection).await
     }
 
     pub async fn run(mut self) -> Result<()> {
+        let mut reap_interval = interval(IDLE_REAP_INTERVAL);
+        reap_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
         loop {
-            self.run_once().await?;
-        }
-    }
-
-    async fn run_control_connection(
-        &mut self,
-        mut connection: IpcConnection,
-        first_frame: Frame,
-    ) -> Result<()> {
-        let response = self.handle_control_frame(first_frame)?;
-        connection.send_frame(&response).await?;
-
-        while let Some(frame) = connection.recv_frame().await? {
-            let response = self.handle_control_frame(frame)?;
-            connection.send_frame(&response).await?;
-        }
-
-        Ok(())
-    }
-
-    fn handle_control_frame(&self, frame: Frame) -> Result<Frame> {
-        let Frame::Request {
-            request_id,
-            session_id,
-            source,
-            target,
-            payload,
-            ..
-        } = frame
-        else {
-            return Err(CoreError::InvalidCoreFrame(
-                "expected request frame".to_string(),
-            ));
-        };
-
-        let response_message = match decode_control_message(&payload)? {
-            CoreControlMessage::Ping(_) => CoreControlMessage::Pong(CorePingResponse),
-            CoreControlMessage::Status(_) => CoreControlMessage::StatusResult(CoreStatusResponse {
-                worker_count: self.registry().len() as u64,
-                socket_path: self.server.socket_path().to_string_lossy().into_owned(),
-                runtime_ready: true,
-            }),
-            _ => {
-                return Err(CoreError::InvalidCoreFrame(
-                    "expected core control request".to_string(),
-                ));
+            tokio::select! {
+                accepted = self.server.accept_one() => {
+                    let connection = accepted?;
+                    run_connection(&self.server, &mut self.worker_manager, connection).await?;
+                }
+                _ = reap_interval.tick() => {
+                    self.worker_manager.reap_idle_workers();
+                }
             }
-        };
-
-        let payload = encode_control_message(&response_message)?;
-
-        Ok(Frame::Response {
-            request_id,
-            session_id,
-            source: target_or_core(target),
-            target: source,
-            payload,
-            metadata: FrameMetadata::new(),
-        })
+        }
     }
+}
+
+async fn run_connection(
+    server: &CoreIpcServer,
+    worker_manager: &mut WorkerManager,
+    mut connection: IpcConnection,
+) -> Result<()> {
+    let Some(first_frame) = connection.recv_frame().await? else {
+        return Ok(());
+    };
+
+    match frame_schema(&first_frame) {
+        Some(WORKER_PROTOCOL_SCHEMA) => {
+            worker_manager
+                .handle_registration_connection(first_frame, connection, None, 300_000)
+                .await
+        }
+        Some(CORE_CONTROL_SCHEMA) => {
+            run_control_connection(server, worker_manager.registry(), connection, first_frame).await
+        }
+        Some(schema) => Err(CoreError::InvalidCoreFrame(format!(
+            "unknown payload schema: {schema}"
+        ))),
+        None => Err(CoreError::InvalidCoreFrame(
+            "missing payload schema".to_string(),
+        )),
+    }
+}
+
+async fn run_control_connection(
+    server: &CoreIpcServer,
+    registry: &WorkerRegistry,
+    mut connection: IpcConnection,
+    first_frame: Frame,
+) -> Result<()> {
+    let response = handle_control_frame(server, registry, first_frame)?;
+    connection.send_frame(&response).await?;
+
+    while let Some(frame) = connection.recv_frame().await? {
+        let response = handle_control_frame(server, registry, frame)?;
+        connection.send_frame(&response).await?;
+    }
+
+    Ok(())
+}
+
+fn handle_control_frame(
+    server: &CoreIpcServer,
+    registry: &WorkerRegistry,
+    frame: Frame,
+) -> Result<Frame> {
+    let Frame::Request {
+        request_id,
+        session_id,
+        source,
+        target,
+        payload,
+        ..
+    } = frame
+    else {
+        return Err(CoreError::InvalidCoreFrame(
+            "expected request frame".to_string(),
+        ));
+    };
+
+    let response_message = match decode_control_message(&payload)? {
+        CoreControlMessage::Ping(_) => CoreControlMessage::Pong(CorePingResponse),
+        CoreControlMessage::Status(_) => CoreControlMessage::StatusResult(CoreStatusResponse {
+            worker_count: registry.len() as u64,
+            socket_path: server.socket_path().to_string_lossy().into_owned(),
+            runtime_ready: true,
+        }),
+        _ => {
+            return Err(CoreError::InvalidCoreFrame(
+                "expected core control request".to_string(),
+            ));
+        }
+    };
+
+    let payload = encode_control_message(&response_message)?;
+
+    Ok(Frame::Response {
+        request_id,
+        session_id,
+        source: target_or_core(target),
+        target: source,
+        payload,
+        metadata: FrameMetadata::new(),
+    })
 }
 
 fn frame_schema(frame: &Frame) -> Option<&str> {

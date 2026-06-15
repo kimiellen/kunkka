@@ -426,10 +426,16 @@ fn target_or_core(target: EndpointId) -> EndpointId {
 
 impl ActiveWorker {
     fn terminate(&mut self) {
-        if let Some(child) = self.child.as_mut() {
+        if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
+    }
+}
+
+impl Drop for ActiveWorker {
+    fn drop(&mut self) {
+        self.terminate();
     }
 }
 
