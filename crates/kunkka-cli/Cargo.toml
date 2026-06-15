@@ -8,11 +8,13 @@ rust-version.workspace = true
 clap.workspace = true
 kunkka-ipc = { path = "../kunkka-ipc" }
 kunkka-protocol = { path = "../kunkka-protocol" }
-kunkka-core = { path = "../kunkka-core" }
+libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+kunkka-core = { path = "../kunkka-core" }
+kunkka-worker-sdk = { path = "../kunkka-worker-sdk" }
 tempfile.workspace = true
