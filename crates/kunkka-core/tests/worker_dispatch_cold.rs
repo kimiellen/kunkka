@@ -159,6 +159,57 @@ async fn cold_dispatch_returns_worker_app_error() {
 }
 
 #[tokio::test]
+async fn manifest_env_cannot_override_core_worker_env() {
+    let (_root, paths) = test_paths();
+    let current_exe = std::env::current_exe().unwrap();
+    write_manifest(
+        &paths,
+        &format!(
+            r#"{{
+                "app_id": "notes",
+                "worker": {{
+                    "program": {},
+                    "args": ["worker_fixture_entrypoint", "--exact", "--nocapture"],
+                    "env": {{
+                        "KUNKKA_WORKER_FIXTURE": "ok",
+                        "KUNKKA_APP_ID": "wrong-app",
+                        "KUNKKA_WORKER_ID": "wrong-worker"
+                    }}
+                }},
+                "idle_timeout_ms": 300000,
+                "startup_timeout_ms": 5000
+            }}"#,
+            serde_json::to_string(current_exe.to_str().unwrap()).unwrap(),
+        ),
+    );
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        runtime.dispatch(
+            AppId::new("notes"),
+            "search".to_string(),
+            payload(br#"{"query":"kunkka"}"#),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(result, DispatchResult::Ok(payload(br#"{"items":[]}"#)));
+    assert!(runtime.worker_manager().is_active(&AppId::new("notes")));
+    assert_eq!(
+        runtime
+            .registry()
+            .get_by_app_id(&AppId::new("notes"))
+            .unwrap()
+            .worker_id
+            .as_str(),
+        "notes"
+    );
+}
+
+#[tokio::test]
 async fn missing_manifest_returns_app_not_found() {
     let (_root, paths) = test_paths();
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();

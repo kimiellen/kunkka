@@ -311,12 +311,12 @@ impl WorkerManager {
 fn spawn_worker(manifest: &AppManifest, socket_path: &Path) -> Result<Child> {
     let mut command = Command::new(&manifest.worker.program);
     command.args(&manifest.worker.args);
-    command.env("KUNKKA_CORE_SOCKET", socket_path.as_os_str());
-    command.env("KUNKKA_APP_ID", manifest.app_id.as_str());
-    command.env("KUNKKA_WORKER_ID", manifest.app_id.as_str());
     for (key, value) in &manifest.worker.env {
         command.env(key, value);
     }
+    command.env("KUNKKA_CORE_SOCKET", socket_path.as_os_str());
+    command.env("KUNKKA_APP_ID", manifest.app_id.as_str());
+    command.env("KUNKKA_WORKER_ID", manifest.app_id.as_str());
     if let Some(cwd) = &manifest.worker.cwd {
         command.current_dir(cwd);
     }
