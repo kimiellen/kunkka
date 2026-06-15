@@ -6,8 +6,8 @@ Kunkka 是面向多种 frontend form 的本地能力平台，包括 Browser Exte
 
 - `kunkka-ipc`：内部 frame protocol、postcard serialization 和 Unix Domain Socket transport。
 - `kunkka-protocol`：共享 typed protocol crate，当前承载 core-control v1 message 和 payload codec。
-- `kunkka-core`：XDG path resolution、private runtime directory setup、minimal core IPC socket binding、in-memory worker registration、single-connection worker registration runtime loop，以及最小 core control protocol。
-- `kunkka-worker-sdk`：共享 worker registration protocol、typed payload codec 和 registration client。
+- `kunkka-core`：XDG path resolution、private runtime directory setup、minimal core IPC socket binding、in-memory worker registration、single-connection worker registration runtime loop、core control protocol、XDG app manifest loading、按需 worker startup、core-internal worker dispatch，以及 idle worker cleanup。
+- `kunkka-worker-sdk`：共享 worker registration/dispatch protocol、typed payload codec、registration client 和 dispatch receive/respond helpers。
 - `kunkka-native-host`：第一版 WebExtension Native Messaging JSON bridge，支持 `ping` 和 `status`，并转发到 core-control IPC。
 
 ## 文档

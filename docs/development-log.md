@@ -2,6 +2,26 @@
 
 ## 2026-06-11
 
+### Worker Dispatch
+
+Implemented:
+
+- XDG JSON app manifest loading from `config/apps/*.json`。
+- Worker dispatch protocol in `kunkka-worker-sdk`。
+- Core active worker registry keyed by `AppId`。
+- Runtime worker registration connection handoff。
+- Core-internal warm and cold worker dispatch。
+- On-demand worker process startup with `KUNKKA_CORE_SOCKET`, `KUNKKA_APP_ID`, and `KUNKKA_WORKER_ID`。
+- Idle worker cleanup。
+
+Verification:
+
+```text
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ### Native Host Bridge
 
 Commit:

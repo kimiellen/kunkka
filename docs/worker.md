@@ -34,12 +34,37 @@ Worker registration payload 在 `kunkka-worker-sdk` 中建模，并序列化为 
 - `kunkka.worker.v1` 返回 `RegisterWorkerAccepted`。
 - `kunkka.core-control.v1` 当前由 core control protocol 处理，不属于 worker registration。
 
+## Worker Dispatch
+
+第一版 worker dispatch 是 core-internal API，不直接暴露给 native-host、CLI 或 TUI。
+
+Dispatch 路由规则：
+
+- `AppId` 是 dispatch 路由键。
+- 第一版每个 `AppId` 只有一个 active worker。
+- 同一 `AppId` 再注册时替换旧 active worker。
+- 第一版 `WorkerId == AppId`。
+
+App manifest 路径：
+
+```text
+$XDG_CONFIG_HOME/kunkka/apps/<app-id>.json
+```
+
+Core 在没有 active worker 时根据 manifest 拉起 worker 进程，并注入：
+
+```text
+KUNKKA_CORE_SOCKET
+KUNKKA_APP_ID
+KUNKKA_WORKER_ID
+```
+
+Dispatch request 使用 `method + Payload`。Core 不解释 app payload，worker 返回 success payload 或 app error `{ code, message }`。
+
 ## 尚未实现
 
-- worker process spawning
 - heartbeat loop
 - worker lifecycle restart policy
-- request dispatch to worker
 - worker streams
 - worker cancellation
 - SQLite persistence
