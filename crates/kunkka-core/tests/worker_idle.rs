@@ -5,7 +5,8 @@ use kunkka_ipc::{
     EndpointId, Frame, FrameMetadata, IpcConnection, IpcListener, Payload, RequestId, SessionId,
 };
 use kunkka_protocol::core_control::{
-    decode_control_message, encode_control_message, CoreControlMessage, CoreStatusRequest,
+    decode_control_message, encode_control_message, CoreControlMessage, CorePingRequest,
+    CorePingResponse, CoreStatusRequest,
 };
 use kunkka_worker_sdk::{
     AppId, DispatchWorkerResponse, RegisterWorkerRequest, WorkerCapability, WorkerClient, WorkerId,
@@ -114,6 +115,30 @@ async fn core_status_worker_count(socket_path: &std::path::Path) -> u64 {
         panic!("expected status result");
     };
     status.worker_count
+}
+
+async fn send_control_request(
+    connection: &mut IpcConnection,
+    request_id: u128,
+    message: CoreControlMessage,
+) -> CoreControlMessage {
+    let payload = encode_control_message(&message).unwrap();
+    let frame = Frame::Request {
+        request_id: RequestId(request_id),
+        session_id: SessionId(100),
+        source: EndpointId::new("test"),
+        target: EndpointId::new("core"),
+        payload,
+        metadata: FrameMetadata::new(),
+    };
+
+    connection.send_frame(&frame).await.unwrap();
+    let response = connection.recv_frame().await.unwrap().unwrap();
+    let Frame::Response { payload, .. } = response else {
+        panic!("expected response frame");
+    };
+
+    decode_control_message(&payload).unwrap()
 }
 
 #[test]
@@ -256,5 +281,51 @@ async fn runtime_run_reaps_idle_workers_while_waiting_for_connections() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     assert_eq!(core_status_worker_count(&socket_path).await, 0);
+    run_task.abort();
+}
+
+#[tokio::test]
+async fn runtime_run_reaps_idle_workers_during_open_control_connection() {
+    let (_root, paths) = test_paths();
+    write_manifest(&paths, &worker_idle_fixture_manifest());
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        runtime.dispatch(AppId::new("notes"), "search".to_string(), payload(b"{}")),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(result, DispatchResult::Ok(payload(br#"{"items":[]}"#)));
+    assert!(runtime.worker_manager().is_active(&AppId::new("notes")));
+    assert_eq!(runtime.worker_manager().active_worker_count(), 1);
+
+    let socket_path = paths.socket_path.clone();
+    let run_task = tokio::spawn(runtime.run());
+    let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+
+    let pong = send_control_request(
+        &mut connection,
+        101,
+        CoreControlMessage::Ping(CorePingRequest),
+    )
+    .await;
+    assert_eq!(pong, CoreControlMessage::Pong(CorePingResponse));
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let status = send_control_request(
+        &mut connection,
+        102,
+        CoreControlMessage::Status(CoreStatusRequest),
+    )
+    .await;
+    let CoreControlMessage::StatusResult(status) = status else {
+        panic!("expected status result");
+    };
+    assert_eq!(status.worker_count, 0);
+
     run_task.abort();
 }

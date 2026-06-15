@@ -97,7 +97,7 @@ async fn run_connection(
                 .await
         }
         Some(CORE_CONTROL_SCHEMA) => {
-            run_control_connection(server, worker_manager.registry(), connection, first_frame).await
+            run_control_connection(server, worker_manager, connection, first_frame).await
         }
         Some(schema) => Err(CoreError::InvalidCoreFrame(format!(
             "unknown payload schema: {schema}"
@@ -110,19 +110,29 @@ async fn run_connection(
 
 async fn run_control_connection(
     server: &CoreIpcServer,
-    registry: &WorkerRegistry,
+    worker_manager: &mut WorkerManager,
     mut connection: IpcConnection,
     first_frame: Frame,
 ) -> Result<()> {
-    let response = handle_control_frame(server, registry, first_frame)?;
+    let response = handle_control_frame(server, worker_manager.registry(), first_frame)?;
     connection.send_frame(&response).await?;
+    let mut reap_interval = interval(IDLE_REAP_INTERVAL);
+    reap_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
-    while let Some(frame) = connection.recv_frame().await? {
-        let response = handle_control_frame(server, registry, frame)?;
-        connection.send_frame(&response).await?;
+    loop {
+        tokio::select! {
+            frame = connection.recv_frame() => {
+                let Some(frame) = frame? else {
+                    return Ok(());
+                };
+                let response = handle_control_frame(server, worker_manager.registry(), frame)?;
+                connection.send_frame(&response).await?;
+            }
+            _ = reap_interval.tick() => {
+                worker_manager.reap_idle_workers();
+            }
+        }
     }
-
-    Ok(())
 }
 
 fn handle_control_frame(
