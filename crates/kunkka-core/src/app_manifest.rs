@@ -14,6 +14,7 @@ pub const DEFAULT_STARTUP_TIMEOUT_MS: u64 = 10_000;
 pub struct AppManifest {
     pub app_id: AppId,
     pub worker: WorkerCommand,
+    pub permissions: AppPermissions,
     pub idle_timeout_ms: u64,
     pub startup_timeout_ms: u64,
 }
@@ -26,10 +27,38 @@ pub struct WorkerCommand {
     pub cwd: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppPermissions {
+    pub frontend_dispatch: FrontendDispatchPermissions,
+}
+
+impl Default for AppPermissions {
+    fn default() -> Self {
+        Self {
+            frontend_dispatch: FrontendDispatchPermissions::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrontendDispatchPermissions {
+    pub allowed_methods: Vec<String>,
+}
+
+impl Default for FrontendDispatchPermissions {
+    fn default() -> Self {
+        Self {
+            allowed_methods: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct RawAppManifest {
     app_id: AppId,
     worker: RawWorkerCommand,
+    #[serde(default)]
+    permissions: Option<RawAppPermissions>,
     #[serde(default = "default_idle_timeout_ms")]
     idle_timeout_ms: u64,
     #[serde(default = "default_startup_timeout_ms")]
@@ -46,6 +75,18 @@ struct RawWorkerCommand {
     env: BTreeMap<String, String>,
     #[serde(default)]
     cwd: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct RawAppPermissions {
+    #[serde(default)]
+    frontend_dispatch: Option<RawFrontendDispatchPermissions>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawFrontendDispatchPermissions {
+    #[serde(default)]
+    allowed_methods: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -72,6 +113,22 @@ impl AppManifest {
             CoreError::ManifestInvalid(format!("{}: worker.args is required", path.display()))
         })?;
 
+        let permissions = match raw.permissions {
+            Some(raw_perms) => {
+                let frontend_dispatch = match raw_perms.frontend_dispatch {
+                    Some(raw_fd) => {
+                        let methods = raw_fd.allowed_methods.unwrap_or_default();
+                        FrontendDispatchPermissions {
+                            allowed_methods: methods,
+                        }
+                    }
+                    None => FrontendDispatchPermissions::default(),
+                };
+                AppPermissions { frontend_dispatch }
+            }
+            None => AppPermissions::default(),
+        };
+
         Ok(Self {
             app_id: raw.app_id,
             worker: WorkerCommand {
@@ -80,6 +137,7 @@ impl AppManifest {
                 env: raw.worker.env,
                 cwd: raw.worker.cwd,
             },
+            permissions,
             idle_timeout_ms: raw.idle_timeout_ms,
             startup_timeout_ms: raw.startup_timeout_ms,
         })
@@ -98,6 +156,15 @@ impl AppManifest {
                 "{}: worker.program is required",
                 path.display()
             )));
+        }
+
+        for method in &self.permissions.frontend_dispatch.allowed_methods {
+            if method.trim().is_empty() {
+                return Err(CoreError::ManifestInvalid(format!(
+                    "{}: permissions.frontend_dispatch.allowed_methods contains blank method",
+                    path.display()
+                )));
+            }
         }
 
         Ok(())

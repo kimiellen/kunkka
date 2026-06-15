@@ -93,6 +93,105 @@ fn uses_default_timeouts_when_manifest_omits_timeout_fields() {
 }
 
 #[test]
+fn loads_manifest_with_frontend_dispatch_permissions() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": ["--serve"]
+            },
+            "permissions": {
+                "frontend_dispatch": {
+                    "allowed_methods": ["search", "open"]
+                }
+            }
+        }"#,
+    );
+
+    let registry = AppRegistry::load(&paths).unwrap();
+    let manifest = registry.get("notes").unwrap();
+
+    assert_eq!(
+        manifest.permissions.frontend_dispatch.allowed_methods,
+        vec!["search".to_string(), "open".to_string()]
+    );
+}
+
+#[test]
+fn missing_permissions_defaults_to_empty_allowed_methods() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": []
+            }
+        }"#,
+    );
+
+    let registry = AppRegistry::load(&paths).unwrap();
+    let manifest = registry.get("notes").unwrap();
+
+    assert!(manifest.permissions.frontend_dispatch.allowed_methods.is_empty());
+}
+
+#[test]
+fn missing_frontend_dispatch_defaults_to_empty_allowed_methods() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": []
+            },
+            "permissions": {}
+        }"#,
+    );
+
+    let registry = AppRegistry::load(&paths).unwrap();
+    let manifest = registry.get("notes").unwrap();
+
+    assert!(manifest.permissions.frontend_dispatch.allowed_methods.is_empty());
+}
+
+#[test]
+fn rejects_blank_method_in_allowed_methods() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": []
+            },
+            "permissions": {
+                "frontend_dispatch": {
+                    "allowed_methods": ["search", "  "]
+                }
+            }
+        }"#,
+    );
+
+    let err = AppRegistry::load(&paths).unwrap_err();
+    assert!(matches!(
+        err,
+        CoreError::ManifestInvalid(message) if message.contains("allowed_methods")
+    ));
+}
+
+#[test]
 fn missing_apps_dir_loads_empty_registry() {
     let (_root, paths) = test_paths();
 
