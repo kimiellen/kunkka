@@ -1,6 +1,6 @@
 # Kunkka Development Log
 
-## 2026-06-11
+## 2026-06-15
 
 ### Worker Dispatch
 
@@ -20,7 +20,11 @@ Verification:
 cargo fmt --all --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace  # post-commit
+git status --short      # clean
 ```
+
+## 2026-06-11
 
 ### Native Host Bridge
 
