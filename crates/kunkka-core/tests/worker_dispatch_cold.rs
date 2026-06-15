@@ -1,9 +1,10 @@
 use kunkka_core::worker_dispatch::DispatchResult;
 use kunkka_core::xdg::KunkkaPaths;
 use kunkka_core::{prepare_core_runtime, CoreError};
-use kunkka_ipc::{FrameMetadata, Payload};
+use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload, RequestId, SessionId};
 use kunkka_worker_sdk::{
-    AppId, DispatchWorkerResponse, RegisterWorkerRequest, WorkerCapability, WorkerClient, WorkerId,
+    encode_worker_message, AppId, DispatchWorkerResponse, RegisterWorkerRequest, WorkerCapability,
+    WorkerClient, WorkerId, WorkerProtocolMessage,
 };
 use std::fs;
 use std::time::Duration;
@@ -230,7 +231,7 @@ async fn manifest_env_cannot_override_core_worker_env() {
 #[tokio::test]
 async fn cold_dispatch_rejects_mismatched_worker_registration() {
     let (_root, paths) = test_paths();
-    write_manifest(&paths, &worker_fixture_manifest("wrong-registration", 5000));
+    write_manifest(&paths, &worker_fixture_manifest("wrong-registration", 50));
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let err = tokio::time::timeout(
@@ -243,15 +244,66 @@ async fn cold_dispatch_rejects_mismatched_worker_registration() {
 
     assert!(matches!(
         err,
-        CoreError::UnexpectedWorkerResponse(message)
-            if (message.contains("registration") || message.contains("mismatch"))
-                && message.contains("notes")
+        CoreError::WorkerStartTimeout(message) if message.contains("notes")
     ));
     assert!(!runtime.worker_manager().is_active(&AppId::new("notes")));
     assert!(!runtime.worker_manager().is_active(&AppId::new("wrong")));
     assert!(runtime
         .registry()
         .get_by_app_id(&AppId::new("wrong"))
+        .is_none());
+}
+
+#[tokio::test]
+async fn cold_dispatch_ignores_unrelated_registration_while_waiting_for_worker() {
+    let (_root, paths) = test_paths();
+    write_manifest(&paths, &worker_fixture_manifest("ok", 5000));
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let stray_socket_path = paths.socket_path.clone();
+    let stray_task = tokio::spawn(async move {
+        let mut connection = IpcConnection::connect(&stray_socket_path).await.unwrap();
+        let payload = encode_worker_message(&WorkerProtocolMessage::RegisterWorker(
+            RegisterWorkerRequest {
+                worker_id: WorkerId::new("stray"),
+                app_id: AppId::new("stray"),
+                capabilities: vec![WorkerCapability {
+                    name: "stray.search".to_string(),
+                    description: None,
+                }],
+            },
+        ))
+        .unwrap();
+        let frame = Frame::Request {
+            request_id: RequestId(1),
+            session_id: SessionId(1),
+            source: EndpointId::new("worker:stray"),
+            target: EndpointId::new("core"),
+            payload,
+            metadata: FrameMetadata::new(),
+        };
+        connection.send_frame(&frame).await.unwrap();
+    });
+    stray_task.await.unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        runtime.dispatch(
+            AppId::new("notes"),
+            "search".to_string(),
+            payload(br#"{"query":"kunkka"}"#),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(result, DispatchResult::Ok(payload(br#"{"items":[]}"#)));
+    assert!(runtime.worker_manager().is_active(&AppId::new("notes")));
+    assert!(!runtime.worker_manager().is_active(&AppId::new("stray")));
+    assert!(runtime
+        .registry()
+        .get_by_app_id(&AppId::new("stray"))
         .is_none());
 }
 

@@ -109,11 +109,16 @@ impl WorkerManager {
         let mut child = spawn_worker(&manifest, &self.socket_path)?;
         let startup_timeout = Duration::from_millis(manifest.startup_timeout_ms);
         let registration = timeout(startup_timeout, async {
-            let mut connection = server.accept_one().await?;
-            let frame = connection.recv_frame().await?.ok_or_else(|| {
-                CoreError::WorkerUnavailable("worker closed before registration".to_string())
-            })?;
-            Ok::<_, CoreError>((frame, connection))
+            loop {
+                let mut connection = server.accept_one().await?;
+                let Some(frame) = connection.recv_frame().await? else {
+                    continue;
+                };
+
+                if registration_matches_expected_app(&frame, app_id) {
+                    return Ok::<_, CoreError>((frame, connection));
+                }
+            }
         })
         .await;
 
@@ -359,6 +364,18 @@ fn spawn_worker(manifest: &AppManifest, socket_path: &Path) -> Result<Child> {
             manifest.app_id.as_str()
         ))
     })
+}
+
+fn registration_matches_expected_app(frame: &Frame, expected_app_id: &AppId) -> bool {
+    let Frame::Request { payload, .. } = frame else {
+        return false;
+    };
+
+    let Ok(WorkerProtocolMessage::RegisterWorker(request)) = decode_worker_message(payload) else {
+        return false;
+    };
+
+    request.app_id == *expected_app_id && request.worker_id.as_str() == expected_app_id.as_str()
 }
 
 fn target_or_core(target: EndpointId) -> EndpointId {
