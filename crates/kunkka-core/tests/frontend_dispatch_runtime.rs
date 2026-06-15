@@ -48,6 +48,24 @@ fn write_manifest(paths: &KunkkaPaths, body: &str) {
     fs::write(apps_dir.join("notes.json"), body).unwrap();
 }
 
+fn write_notes_manifest_with_search(paths: &KunkkaPaths) {
+    write_manifest(
+        paths,
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": ["--serve"]
+            },
+            "permissions": {
+                "frontend_dispatch": {
+                    "allowed_methods": ["search"]
+                }
+            }
+        }"#,
+    );
+}
+
 fn json_payload(bytes: &[u8]) -> Payload {
     Payload {
         bytes: bytes.to_vec(),
@@ -106,6 +124,7 @@ fn dispatch_frame(request_id: u128, app_id: &str, method: &str) -> Frame {
 #[tokio::test]
 async fn frontend_dispatch_calls_warm_worker_and_returns_payload() {
     let (_root, paths) = test_paths();
+    write_notes_manifest_with_search(&paths);
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let worker_task = tokio::spawn(register_worker_and_wait_for_dispatch(
@@ -151,6 +170,7 @@ async fn frontend_dispatch_calls_warm_worker_and_returns_payload() {
 #[tokio::test]
 async fn frontend_dispatch_returns_worker_app_error() {
     let (_root, paths) = test_paths();
+    write_notes_manifest_with_search(&paths);
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let worker_task = tokio::spawn(register_worker_and_wait_for_dispatch(
@@ -379,6 +399,7 @@ async fn frontend_dispatch_event_returns_invalid_core_frame() {
 #[tokio::test]
 async fn one_frontend_connection_can_handle_status_then_dispatch() {
     let (_root, paths) = test_paths();
+    write_notes_manifest_with_search(&paths);
     let mut runtime = prepare_core_runtime(&paths).await.unwrap();
 
     let worker_task = tokio::spawn(register_worker_and_wait_for_dispatch(
