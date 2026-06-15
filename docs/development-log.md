@@ -6,7 +6,7 @@
 
 Implemented:
 
-- XDG JSON app manifest loading from `config/apps/*.json`。
+- XDG JSON app manifest loading from `$XDG_CONFIG_HOME/kunkka/apps/*.json`（即 `KunkkaPaths.config_dir/apps/*.json`）。
 - Worker dispatch protocol in `kunkka-worker-sdk`。
 - Core active worker registry keyed by `AppId`。
 - Runtime worker registration connection handoff。

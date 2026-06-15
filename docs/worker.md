@@ -48,8 +48,10 @@ Dispatch 路由规则：
 App manifest 路径：
 
 ```text
-$XDG_CONFIG_HOME/kunkka/apps/<app-id>.json
+$XDG_CONFIG_HOME/kunkka/apps/*.json
 ```
+
+推荐文件名使用 `<app-id>.json`，但 dispatch 路由以 manifest 内 `app_id` 为准。
 
 Core 在没有 active worker 时根据 manifest 拉起 worker 进程，并注入：
 

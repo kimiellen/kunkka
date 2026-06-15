@@ -98,7 +98,7 @@ Frontend forms 通过 core 和 workers 调用本地能力。
 
 - `kunkka-ipc`：frame protocol、postcard codec、Unix Domain Socket transport。
 - `kunkka-protocol`：shared core-control protocol。
-- `kunkka-core`：XDG path management、runtime socket setup、single-connection runtime loop、in-memory worker registry、core control protocol、XDG app manifest registry、worker lifecycle manager、core-internal dispatch API。
+- `kunkka-core`：XDG path management、runtime socket setup、single-connection runtime loop、in-memory worker registry、core control protocol、XDG app manifest registry、worker startup / active registry / idle cleanup manager、core-internal dispatch API。
 - `kunkka-worker-sdk`：worker registration/dispatch protocol、payload codec、registration and dispatch helpers。
 - `kunkka-native-host`：Native Messaging JSON 到 Kunkka IPC core-control 的桥接入口。
 
