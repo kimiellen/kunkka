@@ -64,6 +64,7 @@ Typed protocol ownership:
 - IPC frame、transport、opaque payload 仍属于 `kunkka-ipc`。
 - 跨 core/frontend 共享的 typed protocol 位于 `kunkka-protocol`。
 - `kunkka.core-control.v1` 当前由 `kunkka-protocol::core_control` 定义。
+- `kunkka.frontend-dispatch.v1` 当前由 `kunkka-protocol::frontend_dispatch` 定义。
 
 当前 examples：
 
@@ -98,6 +99,15 @@ Core control v1 当前支持：
 
 - `Ping` -> `Pong`
 - `Status` -> `StatusResult`
+
+Frontend dispatch：
+
+```text
+content_type = application/vnd.kunkka.frontend-dispatch.v1+postcard
+schema = kunkka.frontend-dispatch.v1
+```
+
+`kunkka-protocol` 拥有 frontend-dispatch v1 的 typed message 和 payload codec。`kunkka-core` 在 frontend connection 上按该 schema 分发请求并路由到 worker dispatch。`kunkka-ipc` 仍只负责 frame、transport 和 opaque payload。
 
 ## ID 规则
 

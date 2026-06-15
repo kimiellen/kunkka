@@ -2,6 +2,24 @@
 
 ## 2026-06-15
 
+### Frontend Dispatch
+
+Implemented:
+
+- `kunkka-protocol` frontend-dispatch v1 protocol and payload codec.
+- `kunkka-core` frontend-dispatch runtime handler backed by existing worker dispatch.
+- Core-owned temporary allow decision for frontend dispatch.
+- `kunkka-native-host` Native Messaging JSON `dispatch` command.
+- JSON payload conversion between Native Messaging and opaque Kunkka IPC payloads.
+
+Verification:
+
+```text
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ### Worker Dispatch
 
 Implemented:

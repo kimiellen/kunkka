@@ -4,14 +4,20 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct NativeRequest {
     pub id: String,
+    #[serde(flatten)]
     pub command: NativeCommand,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "command", rename_all = "snake_case")]
 pub enum NativeCommand {
     Ping,
     Status,
+    Dispatch {
+        app_id: String,
+        method: String,
+        payload: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,11 +39,18 @@ pub enum NativeResult {
         socket_path: String,
         runtime_ready: bool,
     },
+    Dispatch {
+        payload: serde_json::Value,
+    },
+    DispatchError {
+        code: String,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NativeErrorBody {
-    pub code: NativeErrorCode,
+    pub code: String,
     pub message: String,
 }
 
@@ -72,6 +85,19 @@ pub fn decode_request(bytes: &[u8]) -> Result<NativeRequest> {
         ));
     }
 
+    if let NativeCommand::Dispatch { app_id, method, .. } = &request.command {
+        if app_id.is_empty() {
+            return Err(NativeHostError::InvalidRequest(
+                "dispatch app_id is empty".to_string(),
+            ));
+        }
+        if method.is_empty() {
+            return Err(NativeHostError::InvalidRequest(
+                "dispatch method is empty".to_string(),
+            ));
+        }
+    }
+
     Ok(request)
 }
 
@@ -95,7 +121,7 @@ pub fn success_response(id: impl Into<String>, result: NativeResult) -> NativeRe
 
 pub fn error_response(
     id: Option<String>,
-    code: NativeErrorCode,
+    code: impl ToString,
     message: impl Into<String>,
 ) -> NativeResponse {
     NativeResponse {
@@ -103,7 +129,7 @@ pub fn error_response(
         ok: false,
         result: None,
         error: Some(NativeErrorBody {
-            code,
+            code: code.to_string(),
             message: message.into(),
         }),
     }

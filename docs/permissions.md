@@ -45,3 +45,9 @@ Controlled capabilities include:
 ## Current Status
 
 Permission enforcement is not implemented yet.
+
+## Current Frontend Dispatch Status
+
+Frontend dispatch is currently allowed by an explicit temporary decision inside `kunkka-core`. This keeps the permission decision owner in core and avoids native-host-side authorization logic.
+
+The temporary allow decision must be replaced by the real permission system before Kunkka treats worker invocation as enforceable per subject or per app.

@@ -11,7 +11,7 @@ Browser Extension enters the local Kunkka system only through WebExtension Nativ
 `kunkka-native-host` is responsible for:
 
 ```text
-Native Messaging JSON <-> Kunkka IPC
+Native Messaging JSON <-> Kunkka IPC core-control/frontend-dispatch
 ```
 
 Native host must not implement:
@@ -29,6 +29,16 @@ Native host must not implement:
 - request `{ "id": "req-2", "command": "status" }` -> response `{ "id": "req-2", "ok": true, "result": { "type": "status", "worker_count": 0, "socket_path": "/run/user/1000/kunkka/core.sock", "runtime_ready": true } }`
 - core 不可用时返回 `core_unavailable`。
 - native-host 不自动启动 core。
+
+## Native Messaging Dispatch
+
+Browser Extension may request app dispatch through `kunkka-native-host` with high-level JSON:
+
+```json
+{ "id": "req-1", "command": "dispatch", "app_id": "notes", "method": "search", "payload": { "query": "hello" } }
+```
+
+The extension does not see Kunkka IPC frames, Unix sockets, postcard payloads, or worker protocol messages. `kunkka-native-host` forwards the request to `kunkka-core` using `kunkka.frontend-dispatch.v1`.
 
 ## Extension Shell
 

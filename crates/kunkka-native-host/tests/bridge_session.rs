@@ -4,7 +4,9 @@ use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcListener, Payload, Request
 use kunkka_native_host::bridge::NativeHostSession;
 use kunkka_native_host::native_protocol::{NativeCommand, NativeRequest, NativeResult};
 use kunkka_protocol::core_control::{encode_control_message, CoreControlMessage, CorePingResponse};
-use kunkka_worker_sdk::{AppId, RegisterWorkerRequest, WorkerCapability, WorkerClient, WorkerId};
+use kunkka_worker_sdk::{
+    AppId, DispatchWorkerResponse, RegisterWorkerRequest, WorkerCapability, WorkerClient, WorkerId,
+};
 use std::future::Future;
 use tempfile::{tempdir, TempDir};
 use tokio::time::{timeout, Duration};
@@ -263,6 +265,79 @@ async fn unexpected_non_response_frame_clears_connection_and_next_request_reconn
     assert!(recovered.ok);
     assert_eq!(recovered.result, Some(NativeResult::Pong));
 
+    drop(session);
+    wait_for(runtime_task).await.unwrap();
+}
+
+fn dispatch_request(id: &str) -> NativeRequest {
+    NativeRequest {
+        id: id.to_string(),
+        command: NativeCommand::Dispatch {
+            app_id: "example-app".to_string(),
+            method: "search".to_string(),
+            payload: serde_json::json!({"query":"kunkka"}),
+        },
+    }
+}
+
+#[tokio::test]
+async fn session_reuses_connection_for_status_then_dispatch() {
+    let (_root, paths) = test_paths();
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let worker_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+
+        async move {
+            let mut client = WorkerClient::connect(&socket_path, WorkerId::new("worker-1"))
+                .await
+                .unwrap();
+            let registration = client.register(worker_request()).await.unwrap();
+            let dispatch = wait_for(client.recv_dispatch()).await.unwrap();
+            assert_eq!(dispatch.request.method, "search");
+            assert_eq!(
+                dispatch.request.payload.content_type.as_deref(),
+                Some("application/json")
+            );
+            assert_eq!(dispatch.request.payload.bytes, br#"{"query":"kunkka"}"#);
+            client
+                .respond_dispatch(
+                    dispatch,
+                    DispatchWorkerResponse::Ok(Payload {
+                        bytes: br#"{"items":[]}"#.to_vec(),
+                        content_type: Some("application/json".to_string()),
+                        schema: None,
+                        metadata: FrameMetadata::new(),
+                    }),
+                )
+                .await
+                .unwrap();
+            registration
+        }
+    });
+
+    wait_for(runtime.run_once()).await.unwrap();
+
+    let runtime_task = tokio::spawn(async move { runtime.run_once().await.unwrap() });
+    let mut session = NativeHostSession::new(paths.socket_path.clone());
+
+    let status = wait_for(session.handle_request(NativeRequest {
+        id: "req-status".to_string(),
+        command: NativeCommand::Status,
+    }))
+    .await;
+    assert!(matches!(status.result, Some(NativeResult::Status { .. })));
+
+    let dispatch = wait_for(session.handle_request(dispatch_request("req-dispatch"))).await;
+    assert_eq!(dispatch.id.as_deref(), Some("req-dispatch"));
+    assert_eq!(
+        dispatch.result,
+        Some(NativeResult::Dispatch {
+            payload: serde_json::json!({"items": []}),
+        })
+    );
+
+    assert!(wait_for(worker_task).await.unwrap().accepted);
     drop(session);
     wait_for(runtime_task).await.unwrap();
 }

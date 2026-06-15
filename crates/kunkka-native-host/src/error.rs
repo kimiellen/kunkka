@@ -22,6 +22,9 @@ pub enum NativeHostError {
 
     #[error("unexpected core response: {0}")]
     UnexpectedCoreResponse(String),
+
+    #[error("core platform error {code}: {message}")]
+    CorePlatform { code: String, message: String },
 }
 
 impl NativeHostError {
@@ -32,7 +35,9 @@ impl NativeHostError {
             }
             Self::CoreUnavailable(_) => NativeErrorCode::CoreUnavailable,
             Self::CoreIpc(_) => NativeErrorCode::CoreIpcError,
-            Self::UnexpectedCoreResponse(_) => NativeErrorCode::UnexpectedCoreResponse,
+            Self::UnexpectedCoreResponse(_) | Self::CorePlatform { .. } => {
+                NativeErrorCode::UnexpectedCoreResponse
+            }
         }
     }
 }

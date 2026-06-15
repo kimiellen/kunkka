@@ -9,6 +9,10 @@ use kunkka_protocol::core_control::{
     decode_control_message, encode_control_message, CoreControlMessage, CorePingResponse,
     CoreStatusResponse, CORE_CONTROL_SCHEMA,
 };
+use kunkka_protocol::frontend_dispatch::{
+    decode_frontend_dispatch_message, encode_frontend_dispatch_message, FrontendDispatchMessage,
+    FrontendDispatchRequest, FrontendDispatchResponse, FRONTEND_DISPATCH_SCHEMA,
+};
 use kunkka_worker_sdk::{AppId, WORKER_PROTOCOL_SCHEMA};
 use std::time::Duration;
 use tokio::time::{interval, MissedTickBehavior};
@@ -96,8 +100,8 @@ async fn run_connection(
                 .handle_registration_connection(first_frame, connection, None, 300_000)
                 .await
         }
-        Some(CORE_CONTROL_SCHEMA) => {
-            run_control_connection(server, worker_manager, connection, first_frame).await
+        Some(CORE_CONTROL_SCHEMA | FRONTEND_DISPATCH_SCHEMA) => {
+            run_frontend_connection(server, worker_manager, connection, first_frame).await
         }
         Some(schema) => Err(CoreError::InvalidCoreFrame(format!(
             "unknown payload schema: {schema}"
@@ -108,13 +112,13 @@ async fn run_connection(
     }
 }
 
-async fn run_control_connection(
+async fn run_frontend_connection(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
     mut connection: IpcConnection,
     first_frame: Frame,
 ) -> Result<()> {
-    let response = handle_control_frame(server, worker_manager.registry(), first_frame)?;
+    let response = handle_frontend_frame(server, worker_manager, first_frame).await?;
     connection.send_frame(&response).await?;
     let mut reap_interval = interval(IDLE_REAP_INTERVAL);
     reap_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -125,13 +129,132 @@ async fn run_control_connection(
                 let Some(frame) = frame? else {
                     return Ok(());
                 };
-                let response = handle_control_frame(server, worker_manager.registry(), frame)?;
+                let response = handle_frontend_frame(server, worker_manager, frame).await?;
                 connection.send_frame(&response).await?;
             }
             _ = reap_interval.tick() => {
                 worker_manager.reap_idle_workers();
             }
         }
+    }
+}
+
+async fn handle_frontend_frame(
+    server: &CoreIpcServer,
+    worker_manager: &mut WorkerManager,
+    frame: Frame,
+) -> Result<Frame> {
+    match frame_schema(&frame) {
+        Some(CORE_CONTROL_SCHEMA) => handle_control_frame(server, worker_manager.registry(), frame),
+        Some(FRONTEND_DISPATCH_SCHEMA) => {
+            handle_frontend_dispatch_frame(server, worker_manager, frame).await
+        }
+        Some(schema) => Err(CoreError::InvalidCoreFrame(format!(
+            "unknown payload schema: {schema}"
+        ))),
+        None => Err(CoreError::InvalidCoreFrame(
+            "missing payload schema".to_string(),
+        )),
+    }
+}
+
+async fn handle_frontend_dispatch_frame(
+    server: &CoreIpcServer,
+    worker_manager: &mut WorkerManager,
+    frame: Frame,
+) -> Result<Frame> {
+    let Frame::Request {
+        request_id,
+        session_id,
+        source,
+        target,
+        payload,
+        ..
+    } = frame
+    else {
+        return Err(CoreError::InvalidCoreFrame(
+            "expected request frame".to_string(),
+        ));
+    };
+
+    let response = match decode_frontend_dispatch_message(&payload)? {
+        FrontendDispatchMessage::Dispatch(request) => {
+            handle_frontend_dispatch_request(server, worker_manager, request).await
+        }
+        _ => {
+            return Err(CoreError::InvalidCoreFrame(
+                "expected frontend dispatch request".to_string(),
+            ));
+        }
+    };
+
+    let payload =
+        encode_frontend_dispatch_message(&FrontendDispatchMessage::DispatchResult(response))?;
+
+    Ok(Frame::Response {
+        request_id,
+        session_id,
+        source: target_or_core(target),
+        target: source,
+        payload,
+        metadata: FrameMetadata::new(),
+    })
+}
+
+async fn handle_frontend_dispatch_request(
+    server: &CoreIpcServer,
+    worker_manager: &mut WorkerManager,
+    request: FrontendDispatchRequest,
+) -> FrontendDispatchResponse {
+    if request.app_id.is_empty() {
+        return platform_error("invalid_request", "dispatch app_id is empty");
+    }
+    if request.method.is_empty() {
+        return platform_error("invalid_request", "dispatch method is empty");
+    }
+    if !allow_frontend_dispatch_v1(&request) {
+        return platform_error("permission_denied", "frontend dispatch is not allowed");
+    }
+
+    match worker_manager
+        .dispatch_with_start(
+            server,
+            AppId::new(request.app_id),
+            request.method,
+            request.payload,
+        )
+        .await
+    {
+        Ok(DispatchResult::Ok(payload)) => FrontendDispatchResponse::Ok(payload),
+        Ok(DispatchResult::AppError { code, message }) => {
+            FrontendDispatchResponse::AppError { code, message }
+        }
+        Err(err) => platform_error(dispatch_platform_error_code(&err), err.to_string()),
+    }
+}
+
+// TODO(permission): replace with real permission system before production
+fn allow_frontend_dispatch_v1(_request: &FrontendDispatchRequest) -> bool {
+    true
+}
+
+fn platform_error(code: impl Into<String>, message: impl Into<String>) -> FrontendDispatchResponse {
+    FrontendDispatchResponse::PlatformError {
+        code: code.into(),
+        message: message.into(),
+    }
+}
+
+fn dispatch_platform_error_code(error: &CoreError) -> &'static str {
+    match error {
+        CoreError::AppNotFound(_) => "app_not_found",
+        CoreError::WorkerStartFailed(_) => "worker_start_failed",
+        CoreError::WorkerStartTimeout(_) => "worker_start_timeout",
+        CoreError::WorkerUnavailable(_) => "worker_unavailable",
+        CoreError::DispatchIpcError(_) => "dispatch_ipc_error",
+        CoreError::UnexpectedWorkerResponse(_) => "unexpected_worker_response",
+        CoreError::InvalidCoreFrame(_) => "invalid_request",
+        _ => "core_error",
     }
 }
 
