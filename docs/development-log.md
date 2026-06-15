@@ -1,5 +1,21 @@
 # Kunkka Development Log
 
+## 2026-06-16
+
+### CLI Workspace Skeleton
+
+Scope:
+
+- Add `crates/kunkka-cli` as a new frontend crate in the workspace.
+- Keep this slice limited to Cargo workspace setup, crate manifest, minimal binary entrypoint, and placeholder library modules.
+- Add shared `clap` dependency for future CLI argument parsing without implementing CLI behavior in this task.
+
+Verification plan:
+
+1. Run `cargo check -p kunkka-cli` after adding `lib.rs` module declarations but before placeholder files; expected failure from missing modules.
+2. Add empty placeholder modules.
+3. Re-run `cargo check -p kunkka-cli`; expected pass.
+
 ### Manifest Frontend Dispatch Permissions
 
 Implemented:
