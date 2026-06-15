@@ -70,4 +70,4 @@ Decision rules for this slice:
 - Method matching is case-sensitive.
 - Method matching does not trim or normalize whitespace.
 
-This slice only introduces the reusable decision API; wiring runtime enforcement happens in a later task.
+The decision API is wired into the frontend dispatch runtime handler: `runtime.rs` checks permissions via `decide_frontend_dispatch` before calling `dispatch_with_start`.
