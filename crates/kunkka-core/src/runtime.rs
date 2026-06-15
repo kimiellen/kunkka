@@ -1,15 +1,15 @@
 use crate::app_manifest::AppRegistry;
 use crate::ipc_server::CoreIpcServer;
-use crate::worker_dispatch::WorkerManager;
+use crate::worker_dispatch::{DispatchResult, WorkerManager};
 use crate::worker_registry::WorkerRegistry;
 use crate::xdg::KunkkaPaths;
 use crate::{CoreError, Result};
-use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection};
+use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload};
 use kunkka_protocol::core_control::{
     decode_control_message, encode_control_message, CoreControlMessage, CorePingResponse,
     CoreStatusResponse, CORE_CONTROL_SCHEMA,
 };
-use kunkka_worker_sdk::WORKER_PROTOCOL_SCHEMA;
+use kunkka_worker_sdk::{AppId, WORKER_PROTOCOL_SCHEMA};
 
 pub struct CoreRuntime {
     server: CoreIpcServer,
@@ -37,6 +37,17 @@ impl CoreRuntime {
 
     pub fn worker_manager(&self) -> &WorkerManager {
         &self.worker_manager
+    }
+
+    pub async fn dispatch(
+        &mut self,
+        app_id: AppId,
+        method: String,
+        payload: Payload,
+    ) -> Result<DispatchResult> {
+        self.worker_manager
+            .dispatch_with_start(&self.server, app_id, method, payload)
+            .await
     }
 
     pub async fn run_once(&mut self) -> Result<()> {

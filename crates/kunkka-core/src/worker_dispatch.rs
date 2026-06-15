@@ -1,4 +1,5 @@
-use crate::app_manifest::AppRegistry;
+use crate::app_manifest::{AppManifest, AppRegistry};
+use crate::ipc_server::CoreIpcServer;
 use crate::worker_registry::WorkerRegistry;
 use crate::{CoreError, Result};
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload, RequestId, SessionId};
@@ -8,9 +9,10 @@ use kunkka_worker_sdk::{
     WorkerProtocolMessage,
 };
 use std::collections::BTreeMap;
-use std::path::PathBuf;
-use std::process::Child;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command};
 use std::time::{Duration, Instant};
+use tokio::time::timeout;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DispatchResult {
@@ -20,9 +22,7 @@ pub enum DispatchResult {
 
 pub struct WorkerManager {
     registry: WorkerRegistry,
-    #[allow(dead_code)]
     app_registry: AppRegistry,
-    #[allow(dead_code)]
     socket_path: PathBuf,
     active_workers: BTreeMap<AppId, ActiveWorker>,
     next_request_id: u128,
@@ -78,6 +78,70 @@ impl WorkerManager {
         idle_timeout_ms: u64,
     ) {
         self.insert_active_worker(request, connection, None, idle_timeout_ms);
+    }
+
+    pub async fn dispatch_with_start(
+        &mut self,
+        server: &CoreIpcServer,
+        app_id: AppId,
+        method: String,
+        payload: Payload,
+    ) -> Result<DispatchResult> {
+        if !self.is_active(&app_id) {
+            self.start_and_wait_for_registration(server, &app_id)
+                .await?;
+        }
+
+        self.dispatch(app_id, method, payload).await
+    }
+
+    async fn start_and_wait_for_registration(
+        &mut self,
+        server: &CoreIpcServer,
+        app_id: &AppId,
+    ) -> Result<()> {
+        let manifest = self
+            .app_registry
+            .get_app(app_id)
+            .cloned()
+            .ok_or_else(|| CoreError::AppNotFound(app_id.as_str().to_string()))?;
+
+        let mut child = spawn_worker(&manifest, &self.socket_path)?;
+        let startup_timeout = Duration::from_millis(manifest.startup_timeout_ms);
+        let registration = timeout(startup_timeout, async {
+            let mut connection = server.accept_one().await?;
+            let frame = connection.recv_frame().await?.ok_or_else(|| {
+                CoreError::WorkerUnavailable("worker closed before registration".to_string())
+            })?;
+            Ok::<_, CoreError>((frame, connection))
+        })
+        .await;
+
+        match registration {
+            Ok(Ok((frame, connection))) => {
+                self.handle_registration_connection(
+                    frame,
+                    connection,
+                    Some(child),
+                    manifest.idle_timeout_ms,
+                )
+                .await
+            }
+            Ok(Err(err)) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                Err(err)
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                Err(CoreError::WorkerStartTimeout(format!(
+                    "worker for app {} did not register within {} ms",
+                    app_id.as_str(),
+                    manifest.startup_timeout_ms
+                )))
+            }
+        }
     }
 
     pub fn insert_active_worker(
@@ -242,6 +306,27 @@ impl WorkerManager {
         self.next_request_id += 1;
         request_id
     }
+}
+
+fn spawn_worker(manifest: &AppManifest, socket_path: &Path) -> Result<Child> {
+    let mut command = Command::new(&manifest.worker.program);
+    command.args(&manifest.worker.args);
+    command.env("KUNKKA_CORE_SOCKET", socket_path.as_os_str());
+    command.env("KUNKKA_APP_ID", manifest.app_id.as_str());
+    command.env("KUNKKA_WORKER_ID", manifest.app_id.as_str());
+    for (key, value) in &manifest.worker.env {
+        command.env(key, value);
+    }
+    if let Some(cwd) = &manifest.worker.cwd {
+        command.current_dir(cwd);
+    }
+
+    command.spawn().map_err(|err| {
+        CoreError::WorkerStartFailed(format!(
+            "failed to start worker for app {}: {err}",
+            manifest.app_id.as_str()
+        ))
+    })
 }
 
 fn target_or_core(target: EndpointId) -> EndpointId {
