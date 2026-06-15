@@ -330,6 +330,8 @@ dependencies = [
  "kunkka-core",
  "kunkka-ipc",
  "kunkka-protocol",
+ "kunkka-worker-sdk",
+ "libc",
  "serde",
  "serde_json",
  "tempfile",

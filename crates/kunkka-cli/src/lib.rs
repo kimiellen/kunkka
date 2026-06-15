@@ -11,14 +11,12 @@ use std::path::PathBuf;
 /// This mirrors the logic in `kunkka-core::xdg::KunkkaPaths` but is kept
 /// minimal so that `kunkka-cli` does not depend on `kunkka-core` at runtime.
 pub fn resolve_socket_path() -> Result<PathBuf, error::CliError> {
-    let home = env_path("HOME")
+    let _home = env_path("HOME")
         .ok_or_else(|| error::CliError::CoreUnavailable("HOME is not set".to_string()))?;
 
     let runtime_dir = env_path("XDG_RUNTIME_DIR")
         .map(|path| path.join("kunkka"))
-        .unwrap_or_else(|| {
-            PathBuf::from(format!("/tmp/kunkka-runtime-{}", effective_uid()))
-        });
+        .unwrap_or_else(|| PathBuf::from(format!("/tmp/kunkka-runtime-{}", effective_uid())));
 
     Ok(runtime_dir.join("core.sock"))
 }
