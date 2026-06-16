@@ -45,4 +45,7 @@ pub enum CoreError {
 
     #[error("unexpected worker response: {0}")]
     UnexpectedWorkerResponse(String),
+
+    #[error("database error: {0}")]
+    Database(String),
 }
