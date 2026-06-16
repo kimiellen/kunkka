@@ -7,6 +7,7 @@ members = [
   "crates/kunkka-worker-sdk",
   "crates/kunkka-native-host",
   "crates/kunkka-cli",
+  "crates/kunkka-tui",
 ]
 
 [workspace.package]
