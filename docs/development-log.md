@@ -2,6 +2,26 @@
 
 ## 2026-06-16
 
+### CLI Frontend
+
+Implemented:
+
+- `crates/kunkka-cli` CLI frontend crate with `clap` arg parsing.
+- `ping` command: sends `CorePingRequest`, outputs `{"ok":true,"result":{"type":"pong"}}`.
+- `status` command: sends `CoreStatusRequest`, outputs `{"ok":true,"result":{"type":"status",...}}`.
+- `dispatch` command: sends `FrontendDispatchRequest`, outputs worker payload or app error.
+- CLI output JSON schema with `ok`, `result`, `error` fields.
+- Error handling with consistent error codes and exit codes.
+- Integration tests for ping, status, and dispatch.
+
+Verification:
+
+```text
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ### CLI Workspace Skeleton
 
 Scope:

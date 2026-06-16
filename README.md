@@ -9,6 +9,7 @@ Kunkka 是面向多种 frontend form 的本地能力平台，包括 Browser Exte
 - `kunkka-core`：XDG path resolution、private runtime directory setup、minimal core IPC socket binding、in-memory worker registration、single-connection worker registration runtime loop、core control protocol、XDG app manifest loading、按需 worker startup、core-internal worker dispatch、frontend-dispatch runtime handler，以及 idle worker cleanup。
 - `kunkka-worker-sdk`：共享 worker registration/dispatch protocol、typed payload codec、registration client 和 dispatch receive/respond helpers。
 - `kunkka-native-host`：WebExtension Native Messaging JSON bridge，支持 `ping`、`status` 和 JSON `dispatch`，并转发到 core IPC。
+- `kunkka-cli`：CLI frontend，支持 `ping`、`status`、`dispatch` 命令，通过 Kunkka IPC over Unix Domain Socket 连接 core。
 
 ## 文档
 

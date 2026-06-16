@@ -97,7 +97,10 @@ pub async fn run_command_with_socket(
                     Ok(CliOutput::success(CliResult::Dispatch { payload: value }))
                 }
                 FrontendDispatchResponse::AppError { code, message } => {
-                    Ok(CliOutput::success(CliResult::DispatchError { code, message }))
+                    Ok(CliOutput::success(CliResult::DispatchError {
+                        code,
+                        message,
+                    }))
                 }
                 FrontendDispatchResponse::PlatformError { code, message } => {
                     Err(CliError::CorePlatform { code, message })

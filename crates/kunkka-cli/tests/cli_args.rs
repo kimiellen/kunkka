@@ -55,14 +55,7 @@ fn rejects_dispatch_missing_app() {
 
 #[test]
 fn rejects_dispatch_missing_method() {
-    let result = Cli::try_parse_from([
-        "kunkka",
-        "dispatch",
-        "--app",
-        "notes",
-        "--payload",
-        "{}",
-    ]);
+    let result = Cli::try_parse_from(["kunkka", "dispatch", "--app", "notes", "--payload", "{}"]);
     assert!(result.is_err());
 }
 
