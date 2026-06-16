@@ -128,6 +128,7 @@ Current implementation:
 - `crates/kunkka-core/src/database.rs`: `CoreDatabase` with `connect()`, `schema_version()`, `ping()`, `pool()`.
 - `crates/kunkka-core/migrations/`: embedded SQL migrations run at startup.
 - First migration creates `core_metadata` table with `schema_version` = `1`.
+- Second migration creates `frontend_dispatch_audit` for persisted permission decision audit rows.
 - SQLite pragmas: `foreign_keys = ON`, `journal_mode = WAL`.
 
 ## Current Implementation

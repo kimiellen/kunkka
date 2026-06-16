@@ -51,6 +51,10 @@ impl CoreRuntime {
         &self.worker_manager
     }
 
+    pub fn database(&self) -> &CoreDatabase {
+        &self._database
+    }
+
     pub fn reap_idle_workers(&mut self) {
         self.worker_manager.reap_idle_workers();
     }
@@ -68,7 +72,13 @@ impl CoreRuntime {
 
     pub async fn run_once(&mut self) -> Result<()> {
         let connection = self.server.accept_one().await?;
-        run_connection(&self.server, &mut self.worker_manager, connection).await
+        run_connection(
+            &self.server,
+            &mut self.worker_manager,
+            &self._database,
+            connection,
+        )
+        .await
     }
 
     pub async fn run(mut self) -> Result<()> {
@@ -79,7 +89,7 @@ impl CoreRuntime {
             tokio::select! {
                 accepted = self.server.accept_one() => {
                     let connection = accepted?;
-                    run_connection(&self.server, &mut self.worker_manager, connection).await?;
+                    run_connection(&self.server, &mut self.worker_manager, &self._database, connection).await?;
                 }
                 _ = reap_interval.tick() => {
                     self.worker_manager.reap_idle_workers();
@@ -92,6 +102,7 @@ impl CoreRuntime {
 async fn run_connection(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
+    database: &CoreDatabase,
     mut connection: IpcConnection,
 ) -> Result<()> {
     let Some(first_frame) = connection.recv_frame().await? else {
@@ -105,7 +116,7 @@ async fn run_connection(
                 .await
         }
         Some(CORE_CONTROL_SCHEMA | FRONTEND_DISPATCH_SCHEMA) => {
-            run_frontend_connection(server, worker_manager, connection, first_frame).await
+            run_frontend_connection(server, worker_manager, database, connection, first_frame).await
         }
         Some(schema) => Err(CoreError::InvalidCoreFrame(format!(
             "unknown payload schema: {schema}"
@@ -119,10 +130,11 @@ async fn run_connection(
 async fn run_frontend_connection(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
+    database: &CoreDatabase,
     mut connection: IpcConnection,
     first_frame: Frame,
 ) -> Result<()> {
-    let response = handle_frontend_frame(server, worker_manager, first_frame).await?;
+    let response = handle_frontend_frame(server, worker_manager, database, first_frame).await?;
     connection.send_frame(&response).await?;
     let mut reap_interval = interval(IDLE_REAP_INTERVAL);
     reap_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -133,7 +145,7 @@ async fn run_frontend_connection(
                 let Some(frame) = frame? else {
                     return Ok(());
                 };
-                let response = handle_frontend_frame(server, worker_manager, frame).await?;
+                let response = handle_frontend_frame(server, worker_manager, database, frame).await?;
                 connection.send_frame(&response).await?;
             }
             _ = reap_interval.tick() => {
@@ -146,12 +158,13 @@ async fn run_frontend_connection(
 async fn handle_frontend_frame(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
+    database: &CoreDatabase,
     frame: Frame,
 ) -> Result<Frame> {
     match frame_schema(&frame) {
         Some(CORE_CONTROL_SCHEMA) => handle_control_frame(server, worker_manager.registry(), frame),
         Some(FRONTEND_DISPATCH_SCHEMA) => {
-            handle_frontend_dispatch_frame(server, worker_manager, frame).await
+            handle_frontend_dispatch_frame(server, worker_manager, database, frame).await
         }
         Some(schema) => Err(CoreError::InvalidCoreFrame(format!(
             "unknown payload schema: {schema}"
@@ -165,6 +178,7 @@ async fn handle_frontend_frame(
 async fn handle_frontend_dispatch_frame(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
+    database: &CoreDatabase,
     frame: Frame,
 ) -> Result<Frame> {
     let Frame::Request {
@@ -183,7 +197,7 @@ async fn handle_frontend_dispatch_frame(
 
     let response = match decode_frontend_dispatch_message(&payload)? {
         FrontendDispatchMessage::Dispatch(request) => {
-            handle_frontend_dispatch_request(server, worker_manager, request).await
+            handle_frontend_dispatch_request(server, worker_manager, database, request).await?
         }
         _ => {
             return Err(CoreError::InvalidCoreFrame(
@@ -208,27 +222,61 @@ async fn handle_frontend_dispatch_frame(
 async fn handle_frontend_dispatch_request(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
+    database: &CoreDatabase,
     request: FrontendDispatchRequest,
-) -> FrontendDispatchResponse {
+) -> Result<FrontendDispatchResponse> {
     if request.app_id.is_empty() {
-        return platform_error("invalid_request", "dispatch app_id is empty");
+        return Ok(platform_error(
+            "invalid_request",
+            "dispatch app_id is empty",
+        ));
     }
     if request.method.is_empty() {
-        return platform_error("invalid_request", "dispatch method is empty");
+        return Ok(platform_error(
+            "invalid_request",
+            "dispatch method is empty",
+        ));
     }
 
     let Some(manifest) = worker_manager.app_registry().get(&request.app_id) else {
-        return platform_error(
+        if database
+            .record_frontend_dispatch_audit(
+                &request.app_id,
+                &request.method,
+                "deny",
+                "app_not_found",
+            )
+            .await
+            .is_err()
+        {
+            return Ok(platform_error("core_error", "audit write failed"));
+        }
+        return Ok(platform_error(
             "app_not_found",
             format!("app not found: {}", request.app_id),
-        );
+        ));
     };
 
     match crate::permissions::decide_frontend_dispatch(manifest, &request.method) {
         crate::permissions::PermissionDecision::Deny { code, message } => {
-            return platform_error(code, message);
+            if database
+                .record_frontend_dispatch_audit(&request.app_id, &request.method, "deny", code)
+                .await
+                .is_err()
+            {
+                return Ok(platform_error("core_error", "audit write failed"));
+            }
+            return Ok(platform_error(code, message));
         }
         crate::permissions::PermissionDecision::Allow => {}
+    }
+
+    if database
+        .record_frontend_dispatch_audit(&request.app_id, &request.method, "allow", "allowed")
+        .await
+        .is_err()
+    {
+        return Ok(platform_error("core_error", "audit write failed"));
     }
 
     match worker_manager
@@ -240,11 +288,14 @@ async fn handle_frontend_dispatch_request(
         )
         .await
     {
-        Ok(DispatchResult::Ok(payload)) => FrontendDispatchResponse::Ok(payload),
+        Ok(DispatchResult::Ok(payload)) => Ok(FrontendDispatchResponse::Ok(payload)),
         Ok(DispatchResult::AppError { code, message }) => {
-            FrontendDispatchResponse::AppError { code, message }
+            Ok(FrontendDispatchResponse::AppError { code, message })
         }
-        Err(err) => platform_error(dispatch_platform_error_code(&err), err.to_string()),
+        Err(err) => Ok(platform_error(
+            dispatch_platform_error_code(&err),
+            err.to_string(),
+        )),
     }
 }
 

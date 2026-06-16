@@ -2,6 +2,23 @@
 
 ## 2026-06-16
 
+### Frontend Dispatch Audit
+
+Implemented:
+
+- `kunkka-core` core database migration `0002_frontend_dispatch_audit.sql`.
+- `CoreDatabase` frontend dispatch audit write helper with decision/reason validation.
+- frontend dispatch runtime now writes audit rows for `allow/allowed`, `deny/permission_denied`, and `deny/app_not_found` decisions before returning or dispatching.
+- integration tests verify both allow and deny paths persist audit rows.
+
+Verification:
+
+```text
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ### Core Database Foundation
 
 Implemented:

@@ -98,7 +98,7 @@ Frontend forms 通过 core 和 workers 调用本地能力。
 
 - `kunkka-ipc`：frame protocol、postcard codec、Unix Domain Socket transport。
 - `kunkka-protocol`：shared core-control protocol 和 frontend-dispatch protocol。
-- `kunkka-core`：XDG path management、runtime socket setup、single-connection runtime loop、in-memory worker registry、core control protocol、XDG app manifest registry、worker startup / active registry / idle cleanup manager、core-internal dispatch API、frontend-dispatch runtime handler、manifest-based frontend dispatch permissions、SQLite/sqlx core database foundation。
+- `kunkka-core`：XDG path management、runtime socket setup、single-connection runtime loop、in-memory worker registry、core control protocol、XDG app manifest registry、worker startup / active registry / idle cleanup manager、core-internal dispatch API、frontend-dispatch runtime handler、manifest-based frontend dispatch permissions、frontend dispatch permission audit persistence、SQLite/sqlx core database foundation。
 - `kunkka-worker-sdk`：worker registration/dispatch protocol、payload codec、registration and dispatch helpers。
 - `kunkka-native-host`：Native Messaging JSON 到 Kunkka IPC core-control/frontend-dispatch 的桥接入口。
 - `kunkka-cli`：CLI frontend，支持 `ping`、`status`、`dispatch`，通过 Kunkka IPC 直接连接 core。
@@ -109,4 +109,4 @@ Core runtime 当前按 `Payload.schema` 分发请求：
 - `kunkka.core-control.v1` 处理 `Ping/Pong` 和 `Status/StatusResult`。
 - `kunkka.frontend-dispatch.v1` 处理 frontend 到 app worker 的 dispatch request。
 
-TUI、权限系统、permission checks、数据库持久化仍是后续切片。
+TUI 和更完整的权限系统仍是后续切片。

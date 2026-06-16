@@ -1,108 +1,53 @@
 # Kunkka Agent Instructions
 
-## Communication
+## 沟通与范围
 
-- All assistant communication and project documentation should be written in Chinese unless a file format or external tool requires English.
-- Keep implementation changes minimal and focused.
-- Prefer TDD for behavior changes.
+- 仓库文档、代理说明和回复默认使用中文；只有文件格式或外部协议要求时才用英文。
+- 变更保持最小；行为改动优先先写或先改测试。
+- 这个仓库目前没有 `.github/workflows/`、`justfile`、`Makefile`、`.pre-commit-config.yaml` 或 `opencode.json`；不要猜任务入口，直接使用 Cargo。
 
-## Iron Law
+## 文档先行
 
-- Before any implementation, execution, or commit, the relevant design, plan, architectural decision, or project constraint must be documented in the repository first.
-- If the required document does not exist, create or update it before changing source code or running the implementation task.
-- Do not rely on chat history as the source of truth for project decisions.
+- 改源码前，先把对应设计或计划落到仓库里，不要把聊天记录当作设计依据。
+- 当前已落地的文档约定是：设计放在 `docs/superpowers/specs/YYYY-MM-DD-*-design.md`，实施计划放在 `docs/superpowers/plans/YYYY-MM-DD-*.md`。
+- 可执行事实优先于 prose：根 `Cargo.toml`、crate 清单和源码入口，比 `docs/architecture.md` 里的目标布局更可信。
 
-## Project Boundaries
+## 当前工作区
 
-Kunkka is a local capability platform for multiple frontend forms.
+- 以根 `Cargo.toml` 为准，当前 workspace 只有 6 个成员：`kunkka-ipc`、`kunkka-protocol`、`kunkka-core`、`kunkka-worker-sdk`、`kunkka-native-host`、`kunkka-cli`。
+- `docs/architecture.md` 里的 `kunkka-tui`、`apps-backend/`、`apps-frontend/`、`xtask/` 仍是目标布局，不是当前可改的现成目录。
+- workspace 基线是 Rust 2021 edition，`rust-version = 1.80`。
 
-Kunkka is not a single browser extension, CLI, or TUI. It is a unified local capability platform. Browser Extension UI, CLI frontend, TUI frontend, and future local UI forms access local capabilities through Kunkka IPC and app backend workers.
+## 常用命令
 
-## Core Principles
+- 全量验证按开发日志里的固定顺序跑：`cargo fmt --all --check` -> `cargo test --workspace` -> `cargo clippy --workspace --all-targets -- -D warnings`
+- 单 crate 验证：`cargo test -p kunkka-core`、`cargo test -p kunkka-cli`、`cargo test -p kunkka-native-host`
+- 焦点集成测试示例：`cargo test -p kunkka-core --test frontend_dispatch_runtime`、`cargo test -p kunkka-cli --test integration`、`cargo test -p kunkka-native-host --test host_loop`
+- 运行入口：`cargo run -p kunkka-core`、`cargo run -p kunkka-cli -- ping`、`cargo run -p kunkka-cli -- dispatch --app notes --method search --payload '{"query":"kunkka"}'`、`cargo run -p kunkka-native-host`
+- `kunkka-cli` 的二进制名是 `kunkka`；不要去找单独的顶层 CLI 工具目录。
 
-1. Shared local capabilities live in `kunkka-core`.
-2. App backend business logic lives in independent app backend workers.
-3. Frontends are responsible for interaction, display, entrypoints, permission routing, and capability calls.
-4. Local IPC uses Kunkka IPC over Unix Domain Socket.
-5. Browser Extension enters the local system only through Native Messaging.
-6. CLI, TUI, and Browser Extension are frontend forms and must not directly implement core capabilities.
-7. App frontend and app backend are linked through app registry.
-8. Persistent data, config, state, cache, and runtime files must follow XDG Base Directory rules.
+## 真实边界
 
-## Current Implementation Slices
+- Kunkka 是本地能力平台，不是单一 CLI 或浏览器扩展；Browser Extension、CLI 和未来 TUI 都应该通过 core / worker 访问能力。
+- `kunkka-ipc` 只放 frame、transport、opaque payload、codec 和 IPC error；不要把 typed business protocol 或权限逻辑塞进去。
+- `kunkka-protocol` 承载共享 typed protocol；当前已实现的 schema 是 `kunkka.core-control.v1` 和 `kunkka.frontend-dispatch.v1`。
+- `kunkka-core` 拥有 XDG 路径、runtime socket、app manifest 加载、SQLite/sqlx core 数据库、worker startup/dispatch、权限决策。
+- `kunkka-worker-sdk` 拥有 worker registration / dispatch protocol 与客户端辅助。
+- `kunkka-native-host` 只桥接 `WebExtension Native Messaging JSON <-> Kunkka IPC`；不能实现业务逻辑或权限决策。
+- Browser Extension 进入本地系统只能通过 `kunkka-native-host`，不能直接连 Unix Domain Socket。
 
-- `kunkka-ipc`: frame protocol, postcard codec, and UDS transport.
-- `kunkka-core`: XDG path resolution, runtime socket setup, minimal core IPC server, in-memory worker registry.
-- `kunkka-worker-sdk`: shared worker registration protocol, payload codec, and registration client.
+## 运行时约束
 
-## Architecture Boundaries
+- 所有 config/data/state/cache/runtime 路径都必须走 XDG；禁止默认落到 `~/.kunkka`、`./.kunkka`、`./data`、`/tmp/kunkka`。
+- runtime socket 路径是 `$XDG_RUNTIME_DIR/kunkka/core.sock`；没有 `XDG_RUNTIME_DIR` 时回退到 `/tmp/kunkka-runtime-<uid>/core.sock`，且目录权限必须是 `0700`。
+- `kunkka-cli` 和 `kunkka-native-host` 都自己按上面的规则解析 socket；`kunkka-native-host` 不会自动拉起 core。
+- core 数据库固定在 `$XDG_DATA_HOME/kunkka/kunkka.db`，migrations 由 `crates/kunkka-core/migrations/` 里的 SQL 通过 `sqlx::migrate!()` 嵌入执行。
+- app manifest 从 `$XDG_CONFIG_HOME/kunkka/apps/*.json` 加载，dispatch 路由键是 manifest 内的 `app_id`，不是文件名。
+- core 拉起 worker 时会注入 `KUNKKA_CORE_SOCKET`、`KUNKKA_APP_ID`、`KUNKKA_WORKER_ID`。
+- frontend dispatch 权限在 `kunkka-core` 内按 `permissions.frontend_dispatch.allowed_methods` 做精确匹配；缺失、空列表或未命中都等于 deny all，且大小写敏感。
+- core runtime 当前按 `Payload.schema` 分发：`kunkka.worker.v1` 给 worker registration，`kunkka.core-control.v1` 给 ping/status，`kunkka.frontend-dispatch.v1` 给 frontend dispatch。
 
-### `crates/kunkka-ipc`
+## 测试习惯
 
-Only protocol, frame, serialization, codec, transport, and IPC errors belong here.
-
-Do not add:
-
-- App business logic
-- LLM logic
-- Database business logic
-- Browser-specific logic
-- Permission decisions
-
-### `crates/kunkka-core`
-
-Core owns:
-
-- Capability platform
-- Permission system
-- Worker manager and worker registry
-- App registry
-- Database layer
-- File system capability
-- Shell capability
-- LLM provider abstraction
-- External API abstraction
-- Scheduler
-- CLI command registry
-- XDG path management
-
-Do not add concrete app business logic to core.
-
-### `crates/kunkka-worker-sdk`
-
-Worker SDK owns:
-
-- Connection to core
-- Worker registration protocol
-- Worker request handling helpers
-- Event / stream helpers
-- Cancel / heartbeat helpers
-
-### `crates/kunkka-native-host`
-
-Native host only bridges:
-
-```text
-WebExtension Native Messaging JSON <-> Kunkka IPC
-```
-
-It must not implement business logic or permission decisions.
-
-## Storage Rules
-
-Do not use these as default storage paths:
-
-```text
-~/.kunkka
-./.kunkka
-./data
-/tmp/kunkka
-```
-
-Runtime fallback may use:
-
-```text
-/tmp/kunkka-runtime-<uid>
-```
-
-The fallback runtime directory must be `0700` and must not store long-term data.
+- 现有 integration tests 普遍自己构造临时 XDG 目录并在进程内启动 `prepare_core_runtime()`；通常不依赖外部服务或真实系统状态。
+- 行为改动优先在所属 crate 的 `tests/*.rs` 里补或改集成测试，尤其是 `kunkka-core`、`kunkka-cli`、`kunkka-native-host` 这三个 crate。

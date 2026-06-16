@@ -55,6 +55,40 @@ impl CoreDatabase {
         Ok(())
     }
 
+    pub async fn record_frontend_dispatch_audit(
+        &self,
+        app_id: &str,
+        method: &str,
+        decision: &str,
+        reason_code: &str,
+    ) -> Result<()> {
+        if decision != "allow" && decision != "deny" {
+            return Err(CoreError::Database(format!("invalid decision: {decision}")));
+        }
+
+        if reason_code != "allowed"
+            && reason_code != "app_not_found"
+            && reason_code != "permission_denied"
+        {
+            return Err(CoreError::Database(format!(
+                "invalid reason_code: {reason_code}"
+            )));
+        }
+
+        sqlx::query(
+            "INSERT INTO frontend_dispatch_audit (app_id, method, decision, reason_code) VALUES (?1, ?2, ?3, ?4)",
+        )
+        .bind(app_id)
+        .bind(method)
+        .bind(decision)
+        .bind(reason_code)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| CoreError::Database(format!("failed to insert frontend dispatch audit: {err}")))?;
+
+        Ok(())
+    }
+
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }

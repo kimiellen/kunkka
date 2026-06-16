@@ -121,6 +121,28 @@ fn dispatch_frame(request_id: u128, app_id: &str, method: &str) -> Frame {
     }
 }
 
+async fn audit_rows(
+    runtime: &kunkka_core::runtime::CoreRuntime,
+) -> Vec<(String, String, String, String)> {
+    use sqlx::Row;
+    sqlx::query(
+        "SELECT app_id, method, decision, reason_code FROM frontend_dispatch_audit ORDER BY id ASC",
+    )
+    .fetch_all(runtime.database().pool())
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|row| {
+        (
+            row.get("app_id"),
+            row.get("method"),
+            row.get("decision"),
+            row.get("reason_code"),
+        )
+    })
+    .collect()
+}
+
 #[tokio::test]
 async fn frontend_dispatch_calls_warm_worker_and_returns_payload() {
     let (_root, paths) = test_paths();
@@ -165,6 +187,15 @@ async fn frontend_dispatch_calls_warm_worker_and_returns_payload() {
         )))
     );
     assert!(wait_for(worker_task).await.unwrap().accepted);
+    assert_eq!(
+        audit_rows(&runtime).await,
+        vec![(
+            "notes".to_string(),
+            "search".to_string(),
+            "allow".to_string(),
+            "allowed".to_string(),
+        )]
+    );
 }
 
 #[tokio::test]
@@ -208,6 +239,15 @@ async fn frontend_dispatch_returns_worker_app_error() {
         })
     );
     assert!(wait_for(worker_task).await.unwrap().accepted);
+    assert_eq!(
+        audit_rows(&runtime).await,
+        vec![(
+            "notes".to_string(),
+            "search".to_string(),
+            "allow".to_string(),
+            "allowed".to_string(),
+        )]
+    );
 }
 
 #[tokio::test]
@@ -242,6 +282,15 @@ async fn frontend_dispatch_maps_missing_manifest_to_platform_error() {
     };
     assert_eq!(code, "app_not_found");
     assert!(message.contains("missing"));
+    assert_eq!(
+        audit_rows(&runtime).await,
+        vec![(
+            "missing".to_string(),
+            "search".to_string(),
+            "deny".to_string(),
+            "app_not_found".to_string(),
+        )]
+    );
 }
 
 #[tokio::test]
@@ -293,6 +342,15 @@ async fn frontend_dispatch_denies_method_not_in_manifest_permissions() {
     assert!(message.contains("search"));
     assert!(message.contains("notes"));
     assert!(!runtime.worker_manager().is_active(&AppId::new("notes")));
+    assert_eq!(
+        audit_rows(&runtime).await,
+        vec![(
+            "notes".to_string(),
+            "search".to_string(),
+            "deny".to_string(),
+            "permission_denied".to_string(),
+        )]
+    );
 }
 
 #[tokio::test]
@@ -465,4 +523,98 @@ async fn one_frontend_connection_can_handle_status_then_dispatch() {
         )))
     );
     assert!(wait_for(worker_task).await.unwrap().accepted);
+}
+
+#[tokio::test]
+async fn frontend_dispatch_audit_write_failure_on_deny_returns_core_error() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": ["--serve"]
+            },
+            "permissions": {
+                "frontend_dispatch": {
+                    "allowed_methods": ["open"]
+                }
+            }
+        }"#,
+    );
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    sqlx::query("DROP TABLE frontend_dispatch_audit")
+        .execute(runtime.database().pool())
+        .await
+        .unwrap();
+
+    let frontend_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+            connection
+                .send_frame(&dispatch_frame(50, "notes", "search"))
+                .await
+                .unwrap();
+            connection.recv_frame().await.unwrap().unwrap()
+        }
+    });
+
+    wait_for(runtime.run_once()).await.unwrap();
+
+    let Frame::Response { payload, .. } = wait_for(frontend_task).await.unwrap() else {
+        panic!("expected response frame");
+    };
+    let FrontendDispatchMessage::DispatchResult(FrontendDispatchResponse::PlatformError {
+        code,
+        message,
+    }) = decode_frontend_dispatch_message(&payload).unwrap()
+    else {
+        panic!("expected platform error");
+    };
+    assert_eq!(code, "core_error");
+    assert_eq!(message, "audit write failed");
+}
+
+#[tokio::test]
+async fn frontend_dispatch_audit_write_failure_on_allow_returns_core_error() {
+    let (_root, paths) = test_paths();
+    write_notes_manifest_with_search(&paths);
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    sqlx::query("DROP TABLE frontend_dispatch_audit")
+        .execute(runtime.database().pool())
+        .await
+        .unwrap();
+
+    let frontend_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+            connection
+                .send_frame(&dispatch_frame(51, "notes", "search"))
+                .await
+                .unwrap();
+            connection.recv_frame().await.unwrap().unwrap()
+        }
+    });
+
+    wait_for(runtime.run_once()).await.unwrap();
+
+    let Frame::Response { payload, .. } = wait_for(frontend_task).await.unwrap() else {
+        panic!("expected response frame");
+    };
+    let FrontendDispatchMessage::DispatchResult(FrontendDispatchResponse::PlatformError {
+        code,
+        message,
+    }) = decode_frontend_dispatch_message(&payload).unwrap()
+    else {
+        panic!("expected platform error");
+    };
+    assert_eq!(code, "core_error");
+    assert_eq!(message, "audit write failed");
 }
