@@ -51,3 +51,6 @@
 
 - 现有 integration tests 普遍自己构造临时 XDG 目录并在进程内启动 `prepare_core_runtime()`；通常不依赖外部服务或真实系统状态。
 - 行为改动优先在所属 crate 的 `tests/*.rs` 里补或改集成测试，尤其是 `kunkka-core`、`kunkka-cli`、`kunkka-native-host` 这三个 crate。
+- 集成测试里有一个反复出现的 `test_paths()` 辅助函数，构造 `tempdir` + `KunkkaPaths`；新测试应复用同一模式，不要硬编码系统路径。
+- `kunkka-cli` 和 `kunkka-native-host` 的 dev-dependencies 依赖 `kunkka-core` 和 `kunkka-worker-sdk`，用于在测试里构造完整 runtime 场景。
+- 新增 migration 放在 `crates/kunkka-core/migrations/`，文件名按序号递增（`0001_*`、`0002_*` …），用 `sqlx::migrate!()` 嵌入；不需要 `SQLX_OFFLINE` 或 `.sqlx/` 目录。

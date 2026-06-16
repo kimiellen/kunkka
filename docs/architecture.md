@@ -102,6 +102,7 @@ Frontend forms 通过 core 和 workers 调用本地能力。
 - `kunkka-worker-sdk`：worker registration/dispatch protocol、payload codec、registration and dispatch helpers。
 - `kunkka-native-host`：Native Messaging JSON 到 Kunkka IPC core-control/frontend-dispatch 的桥接入口。
 - `kunkka-cli`：CLI frontend，支持 `ping`、`status`、`dispatch`，通过 Kunkka IPC 直接连接 core。
+- `kunkka-tui`：TUI frontend，基于 Ratatui + crossterm，当前支持 `ping`，通过 Kunkka IPC 直接连接 core。
 
 Core runtime 当前按 `Payload.schema` 分发请求：
 
@@ -109,4 +110,4 @@ Core runtime 当前按 `Payload.schema` 分发请求：
 - `kunkka.core-control.v1` 处理 `Ping/Pong` 和 `Status/StatusResult`。
 - `kunkka.frontend-dispatch.v1` 处理 frontend 到 app worker 的 dispatch request。
 
-TUI 和更完整的权限系统仍是后续切片。
+更完整的权限系统仍是后续切片。

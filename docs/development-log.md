@@ -2,6 +2,28 @@
 
 ## 2026-06-16
 
+### TUI Frontend Skeleton
+
+Implemented:
+
+- `crates/kunkka-tui` as 7th workspace crate with Ratatui + crossterm dependencies.
+- `TuiError` enum with `CoreUnavailable`, `CoreIpc`, `UnexpectedCoreResponse` variants.
+- `resolve_socket_path()` with XDG socket path resolution matching CLI/native-host pattern.
+- `ping_core()` async IPC client using kunkka-ipc + kunkka-protocol.
+- `App` state machine with `PingStatus` enum (Idle/Loading/Ok/Err).
+- Ratatui UI rendering with centered layout, colored status display.
+- Event loop with crossterm keyboard input and async IPC via tokio mpsc.
+- Main entry point with terminal raw mode and alternate screen management.
+- Integration test verifying TUI client can ping core and receive pong.
+
+Verification:
+
+```text
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ### Frontend Dispatch Audit
 
 Implemented:
