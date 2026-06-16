@@ -1,5 +1,27 @@
 # Kunkka Development Log
 
+## 2026-06-17
+
+### Capability Layer (File System)
+
+Implemented:
+
+- `kunkka.capability.v1` payload schema with `CapabilityRequest`/`CapabilityResponse`/`CapabilityError` types and postcard codec in `kunkka-core/src/capability/mod.rs`.
+- App manifest `capabilities.fs.paths` whitelist field with path validation (absolute paths only) in `app_manifest.rs`.
+- Path permission checking with normalization (`.`, `..`, double slashes) and directory prefix / exact file matching in `capability/permissions.rs`.
+- File system operations: `read_file`, `write_file`, `list_dir` with proper error codes (`permission_denied`, `not_found`, `io_error`, `not_utf8`, `unknown_method`) in `capability/fs.rs`.
+- Runtime capability dispatch: `CAPABILITY_SCHEMA` branch in `run_connection()`, short-lived connection model, app_id-based manifest lookup.
+- Security fix: directory prefix sibling escape prevention (path-component-aware boundary check).
+- 22 tests: 8 permission tests, 6 fs ops tests, 3 manifest tests, 6 integration tests through IPC.
+
+Verification:
+
+```text
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ## 2026-06-16
 
 ### TUI Frontend Skeleton

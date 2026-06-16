@@ -98,16 +98,24 @@ Frontend forms 通过 core 和 workers 调用本地能力。
 
 - `kunkka-ipc`：frame protocol、postcard codec、Unix Domain Socket transport。
 - `kunkka-protocol`：shared core-control protocol 和 frontend-dispatch protocol。
-- `kunkka-core`：XDG path management、runtime socket setup、single-connection runtime loop、in-memory worker registry、core control protocol、XDG app manifest registry、worker startup / active registry / idle cleanup manager、core-internal dispatch API、frontend-dispatch runtime handler、manifest-based frontend dispatch permissions、frontend dispatch permission audit persistence、SQLite/sqlx core database foundation。
+- `kunkka-core`：XDG path management、runtime socket setup、single-connection runtime loop、in-memory worker registry、core control protocol、XDG app manifest registry、worker startup / active registry / idle cleanup manager、core-internal dispatch API、frontend-dispatch runtime handler、manifest-based frontend dispatch permissions、frontend dispatch permission audit persistence、SQLite/sqlx core database foundation、capability layer with fs operations and path permission checking。
 - `kunkka-worker-sdk`：worker registration/dispatch protocol、payload codec、registration and dispatch helpers。
 - `kunkka-native-host`：Native Messaging JSON 到 Kunkka IPC core-control/frontend-dispatch 的桥接入口。
 - `kunkka-cli`：CLI frontend，支持 `ping`、`status`、`dispatch`，通过 Kunkka IPC 直接连接 core。
 - `kunkka-tui`：TUI frontend，基于 Ratatui + crossterm，当前支持 `ping`，通过 Kunkka IPC 直接连接 core。
+
+Core 内部 capability 层：
+
+- `capability/mod.rs`：`kunkka.capability.v1` 协议类型和 codec，capability 请求路由。
+- `capability/permissions.rs`：路径白名单校验，支持目录前缀匹配和精确文件匹配，路径规范化。
+- `capability/fs.rs`：文件系统操作（`read_file`、`write_file`、`list_dir`）。
+- App manifest `capabilities.fs.paths` 白名单配置。
 
 Core runtime 当前按 `Payload.schema` 分发请求：
 
 - `kunkka.worker.v1` 处理 worker registration。
 - `kunkka.core-control.v1` 处理 `Ping/Pong` 和 `Status/StatusResult`。
 - `kunkka.frontend-dispatch.v1` 处理 frontend 到 app worker 的 dispatch request。
+- `kunkka.capability.v1` 处理 worker capability 请求（当前支持文件系统操作）。
 
 更完整的权限系统仍是后续切片。
