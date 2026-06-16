@@ -46,13 +46,14 @@ pub async fn ping_core(socket_path: &PathBuf) -> Result<CorePingResponse, TuiErr
         .await
         .map_err(|e| TuiError::CoreIpc(e.to_string()))?;
 
-    let frame = response.ok_or_else(|| {
-        TuiError::CoreIpc("connection closed before response".to_string())
-    })?;
+    let frame = response
+        .ok_or_else(|| TuiError::CoreIpc("connection closed before response".to_string()))?;
 
     match frame {
         Frame::Response {
-            request_id, payload, ..
+            request_id,
+            payload,
+            ..
         } => {
             if request_id != RequestId(1) {
                 return Err(TuiError::UnexpectedCoreResponse(format!(

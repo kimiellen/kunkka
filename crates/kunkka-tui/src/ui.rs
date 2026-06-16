@@ -10,9 +10,7 @@ use crate::app::{App, PingStatus};
 
 pub fn render(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
-        .constraints([
-            Constraint::Min(1),
-        ])
+        .constraints([Constraint::Min(1)])
         .split(f.area());
 
     let mut lines = vec![

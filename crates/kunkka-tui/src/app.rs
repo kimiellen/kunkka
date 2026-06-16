@@ -10,11 +10,17 @@ pub struct App {
     pub ping_status: PingStatus,
 }
 
-impl App {
-    pub fn new() -> Self {
+impl Default for App {
+    fn default() -> Self {
         Self {
             should_quit: false,
             ping_status: PingStatus::Idle,
         }
+    }
+}
+
+impl App {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
