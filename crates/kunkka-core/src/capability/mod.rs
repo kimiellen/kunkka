@@ -57,3 +57,39 @@ pub fn decode_capability_response(payload: &Payload) -> crate::Result<Capability
     postcard::from_bytes(&payload.bytes)
         .map_err(|e| crate::CoreError::InvalidCoreFrame(format!("capability decode: {e}")))
 }
+
+pub async fn handle_capability_request(
+    worker_manager: &crate::worker_dispatch::WorkerManager,
+    request: CapabilityRequest,
+) -> CapabilityResponse {
+    let result = handle_capability_inner(worker_manager, &request).await;
+    CapabilityResponse { result }
+}
+
+async fn handle_capability_inner(
+    worker_manager: &crate::worker_dispatch::WorkerManager,
+    request: &CapabilityRequest,
+) -> Result<Vec<u8>, CapabilityError> {
+    if request.app_id.is_empty() {
+        return Err(CapabilityError {
+            code: "invalid_request".to_string(),
+            message: "capability request app_id is empty".to_string(),
+        });
+    }
+
+    let manifest = worker_manager
+        .app_registry()
+        .get(&request.app_id)
+        .ok_or_else(|| CapabilityError {
+            code: "app_not_found".to_string(),
+            message: format!("app not found: {}", request.app_id),
+        })?;
+
+    match request.capability.as_str() {
+        "fs" => fs::handle_fs_request(manifest, &request.method, &request.params).await,
+        _ => Err(CapabilityError {
+            code: "unknown_capability".to_string(),
+            message: format!("unknown capability: {}", request.capability),
+        }),
+    }
+}

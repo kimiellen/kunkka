@@ -1,4 +1,8 @@
 use crate::app_manifest::AppRegistry;
+use crate::capability::{
+    decode_capability_request, encode_capability_response, handle_capability_request,
+    CAPABILITY_SCHEMA,
+};
 use crate::database::CoreDatabase;
 use crate::ipc_server::CoreIpcServer;
 use crate::worker_dispatch::{DispatchResult, WorkerManager};
@@ -118,6 +122,9 @@ async fn run_connection(
         Some(CORE_CONTROL_SCHEMA | FRONTEND_DISPATCH_SCHEMA) => {
             run_frontend_connection(server, worker_manager, database, connection, first_frame).await
         }
+        Some(CAPABILITY_SCHEMA) => {
+            handle_capability_connection(worker_manager, connection, first_frame).await
+        }
         Some(schema) => Err(CoreError::InvalidCoreFrame(format!(
             "unknown payload schema: {schema}"
         ))),
@@ -153,6 +160,42 @@ async fn run_frontend_connection(
             }
         }
     }
+}
+
+async fn handle_capability_connection(
+    worker_manager: &WorkerManager,
+    mut connection: IpcConnection,
+    frame: Frame,
+) -> Result<()> {
+    let Frame::Request {
+        request_id,
+        session_id,
+        source,
+        target,
+        payload,
+        ..
+    } = frame
+    else {
+        return Err(CoreError::InvalidCoreFrame(
+            "expected request frame".to_string(),
+        ));
+    };
+
+    let request = decode_capability_request(&payload)?;
+    let response = handle_capability_request(worker_manager, request).await;
+    let response_payload = encode_capability_response(&response)?;
+
+    let response_frame = Frame::Response {
+        request_id,
+        session_id,
+        source: target_or_core(target),
+        target: source,
+        payload: response_payload,
+        metadata: FrameMetadata::new(),
+    };
+
+    connection.send_frame(&response_frame).await?;
+    Ok(())
 }
 
 async fn handle_frontend_frame(
