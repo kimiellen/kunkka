@@ -62,6 +62,7 @@ pub async fn handle_fs_request(
                 let code = match e.kind() {
                     std::io::ErrorKind::NotFound => "not_found",
                     std::io::ErrorKind::PermissionDenied => "permission_denied",
+                    std::io::ErrorKind::InvalidData => "not_utf8",
                     _ => "io_error",
                 };
                 CapabilityError {
@@ -121,7 +122,7 @@ pub async fn handle_fs_request(
                     message: e.to_string(),
                 })?;
                 let entry_type = if file_type.is_dir() {
-                    "directory"
+                    "dir"
                 } else if file_type.is_file() {
                     "file"
                 } else {

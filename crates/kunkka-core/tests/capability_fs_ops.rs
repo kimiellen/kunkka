@@ -86,6 +86,8 @@ async fn list_dir_returns_entries() {
     assert!(names.contains(&"a.txt"));
     assert!(names.contains(&"b.txt"));
     assert!(names.contains(&"sub"));
+    let sub = parsed.entries.iter().find(|e| e.name == "sub").unwrap();
+    assert_eq!(sub.entry_type, "dir");
 }
 
 #[tokio::test]
@@ -108,4 +110,18 @@ async fn unknown_method_returns_error() {
 
     let result = handle_fs_request(&manifest, "no_such_method", &[]).await;
     assert!(matches!(result, Err(CapabilityError { code, .. }) if code == "unknown_method"));
+}
+
+#[tokio::test]
+async fn read_file_non_utf8_returns_not_utf8() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("binary.bin"), [0xFF, 0xFE, 0x00, 0x01]).unwrap();
+    let manifest = manifest_with_dir(dir.path());
+
+    let params = postcard::to_stdvec(&ReadFileParams {
+        path: format!("{}/binary.bin", dir.path().display()),
+    })
+    .unwrap();
+    let result = handle_fs_request(&manifest, "read_file", &params).await;
+    assert!(matches!(result, Err(CapabilityError { code, .. }) if code == "not_utf8"));
 }
