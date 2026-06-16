@@ -15,6 +15,7 @@ pub struct AppManifest {
     pub app_id: AppId,
     pub worker: WorkerCommand,
     pub permissions: AppPermissions,
+    pub capabilities: CapabilitiesConfig,
     pub idle_timeout_ms: u64,
     pub startup_timeout_ms: u64,
 }
@@ -37,12 +38,24 @@ pub struct FrontendDispatchPermissions {
     pub allowed_methods: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CapabilitiesConfig {
+    pub fs: Option<FsCapabilityConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FsCapabilityConfig {
+    pub paths: Vec<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct RawAppManifest {
     app_id: AppId,
     worker: RawWorkerCommand,
     #[serde(default)]
     permissions: Option<RawAppPermissions>,
+    #[serde(default)]
+    capabilities: Option<RawCapabilitiesConfig>,
     #[serde(default = "default_idle_timeout_ms")]
     idle_timeout_ms: u64,
     #[serde(default = "default_startup_timeout_ms")]
@@ -71,6 +84,18 @@ struct RawAppPermissions {
 struct RawFrontendDispatchPermissions {
     #[serde(default)]
     allowed_methods: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct RawCapabilitiesConfig {
+    #[serde(default)]
+    fs: Option<RawFsCapabilityConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawFsCapabilityConfig {
+    #[serde(default)]
+    paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -113,6 +138,16 @@ impl AppManifest {
             None => AppPermissions::default(),
         };
 
+        let capabilities = match raw.capabilities {
+            Some(raw_caps) => {
+                let fs = raw_caps.fs.map(|raw_fs| FsCapabilityConfig {
+                    paths: raw_fs.paths.unwrap_or_default(),
+                });
+                CapabilitiesConfig { fs }
+            }
+            None => CapabilitiesConfig::default(),
+        };
+
         Ok(Self {
             app_id: raw.app_id,
             worker: WorkerCommand {
@@ -122,6 +157,7 @@ impl AppManifest {
                 cwd: raw.worker.cwd,
             },
             permissions,
+            capabilities,
             idle_timeout_ms: raw.idle_timeout_ms,
             startup_timeout_ms: raw.startup_timeout_ms,
         })
@@ -148,6 +184,23 @@ impl AppManifest {
                     "{}: permissions.frontend_dispatch.allowed_methods contains blank method",
                     path.display()
                 )));
+            }
+        }
+
+        if let Some(fs_caps) = &self.capabilities.fs {
+            for fs_path in &fs_caps.paths {
+                if fs_path.trim().is_empty() {
+                    return Err(CoreError::ManifestInvalid(format!(
+                        "{}: capabilities.fs.paths contains blank path",
+                        path.display()
+                    )));
+                }
+                if !fs_path.starts_with('/') {
+                    return Err(CoreError::ManifestInvalid(format!(
+                        "{}: capabilities.fs.paths contains non-absolute path: {fs_path}",
+                        path.display()
+                    )));
+                }
             }
         }
 

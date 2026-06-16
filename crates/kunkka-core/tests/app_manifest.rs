@@ -366,3 +366,78 @@ fn rejects_manifest_missing_worker_args() {
 
     assert!(message.contains("worker.args"));
 }
+
+#[test]
+fn manifest_loads_capabilities_fs_paths() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": []
+            },
+            "capabilities": {
+                "fs": {
+                    "paths": ["/home/docs/", "/tmp/file.txt"]
+                }
+            }
+        }"#,
+    );
+
+    let registry = AppRegistry::load(&paths).unwrap();
+    let manifest = registry.get("notes").unwrap();
+
+    let fs_caps = manifest.capabilities.fs.as_ref().unwrap();
+    assert_eq!(fs_caps.paths, vec!["/home/docs/", "/tmp/file.txt"]);
+}
+
+#[test]
+fn manifest_missing_capabilities_is_empty() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": []
+            }
+        }"#,
+    );
+
+    let registry = AppRegistry::load(&paths).unwrap();
+    let manifest = registry.get("notes").unwrap();
+
+    assert!(manifest.capabilities.fs.is_none());
+}
+
+#[test]
+fn manifest_rejects_relative_fs_path() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": []
+            },
+            "capabilities": {
+                "fs": {
+                    "paths": ["relative/path"]
+                }
+            }
+        }"#,
+    );
+
+    let err = AppRegistry::load(&paths).unwrap_err();
+    assert!(matches!(
+        err,
+        CoreError::ManifestInvalid(message) if message.contains("non-absolute")
+    ));
+}

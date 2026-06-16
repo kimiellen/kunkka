@@ -1,5 +1,5 @@
 use kunkka_core::app_manifest::{
-    AppManifest, AppPermissions, FrontendDispatchPermissions, WorkerCommand,
+    AppManifest, AppPermissions, CapabilitiesConfig, FrontendDispatchPermissions, WorkerCommand,
 };
 use kunkka_core::permissions::{decide_frontend_dispatch, PermissionDecision};
 use kunkka_worker_sdk::AppId;
@@ -19,6 +19,7 @@ fn manifest_with_methods(methods: &[&str]) -> AppManifest {
                 allowed_methods: methods.iter().map(|s| s.to_string()).collect(),
             },
         },
+        capabilities: CapabilitiesConfig::default(),
         idle_timeout_ms: 300_000,
         startup_timeout_ms: 10_000,
     }
