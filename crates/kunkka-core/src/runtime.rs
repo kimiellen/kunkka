@@ -1,4 +1,5 @@
 use crate::app_manifest::AppRegistry;
+use crate::database::CoreDatabase;
 use crate::ipc_server::CoreIpcServer;
 use crate::worker_dispatch::{DispatchResult, WorkerManager};
 use crate::worker_registry::WorkerRegistry;
@@ -22,11 +23,13 @@ const IDLE_REAP_INTERVAL: Duration = Duration::from_millis(100);
 pub struct CoreRuntime {
     server: CoreIpcServer,
     worker_manager: WorkerManager,
+    _database: CoreDatabase,
 }
 
 impl CoreRuntime {
     pub async fn prepare(paths: &KunkkaPaths) -> Result<Self> {
         paths.ensure_dirs()?;
+        let database = CoreDatabase::connect(paths).await?;
         let server = CoreIpcServer::bind(paths).await?;
         let app_registry = AppRegistry::load(paths)?;
 
@@ -36,6 +39,7 @@ impl CoreRuntime {
                 app_registry,
                 paths.socket_path.clone(),
             ),
+            _database: database,
         })
     }
 

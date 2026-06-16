@@ -1,4 +1,5 @@
 use kunkka_core::database::CoreDatabase;
+use kunkka_core::prepare_core_runtime;
 use kunkka_core::xdg::KunkkaPaths;
 use tempfile::tempdir;
 
@@ -62,4 +63,12 @@ async fn connect_creates_parent_directories() {
     };
     let _db = CoreDatabase::connect(&paths).await.unwrap();
     assert!(deep_path.exists());
+}
+
+#[tokio::test]
+async fn core_runtime_prepare_initializes_database() {
+    let (_root, paths) = test_paths();
+    let runtime = prepare_core_runtime(&paths).await.unwrap();
+    assert!(paths.database_path.exists());
+    assert_eq!(runtime.worker_manager().active_worker_count(), 0);
 }
