@@ -125,8 +125,10 @@ pub async fn handle_fs_request(
                     "dir"
                 } else if file_type.is_file() {
                     "file"
-                } else {
+                } else if file_type.is_symlink() {
                     "symlink"
+                } else {
+                    "other"
                 };
                 entries.push(DirEntry {
                     name: entry.file_name().to_string_lossy().into_owned(),
