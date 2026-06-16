@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 kunkka-ipc = { path = "../kunkka-ipc" }
 kunkka-protocol = { path = "../kunkka-protocol" }
+libc.workspace = true
 ratatui = "0.29"
 crossterm = "0.28"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "time"] }
