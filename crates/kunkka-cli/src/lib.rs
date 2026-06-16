@@ -23,7 +23,7 @@ pub fn resolve_socket_path() -> Result<PathBuf, error::CliError> {
     let _home = env_path("HOME")
         .ok_or_else(|| error::CliError::CoreUnavailable("HOME is not set".to_string()))?;
 
-    let runtime_dir = env_path("XDG_RUNTIME_DIR")
+    let runtime_dir = absolute_env_path(&env_path("XDG_RUNTIME_DIR"))
         .map(|path| path.join("kunkka"))
         .unwrap_or_else(|| PathBuf::from(format!("/tmp/kunkka-runtime-{}", effective_uid())));
 
@@ -32,6 +32,10 @@ pub fn resolve_socket_path() -> Result<PathBuf, error::CliError> {
 
 fn env_path(name: &str) -> Option<PathBuf> {
     env::var_os(name).map(PathBuf::from)
+}
+
+fn absolute_env_path(path: &Option<PathBuf>) -> Option<PathBuf> {
+    path.as_ref().filter(|path| path.is_absolute()).cloned()
 }
 
 fn effective_uid() -> u32 {
