@@ -44,7 +44,7 @@ pub struct ListDirResult {
 
 fn decode_params<T: serde::de::DeserializeOwned>(params: &[u8]) -> Result<T, CapabilityError> {
     postcard::from_bytes(params).map_err(|e| CapabilityError {
-        code: "io_error".to_string(),
+        code: "invalid_params".to_string(),
         message: format!("invalid params: {e}"),
     })
 }

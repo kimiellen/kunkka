@@ -82,3 +82,10 @@ fn normalizes_double_slashes() {
     let manifest = manifest_with_fs_paths(vec!["/home/user/notes/"]);
     assert!(check_fs_permission(&manifest, "/home/user//notes/todo.txt").is_ok());
 }
+
+#[test]
+fn denies_directory_prefix_sibling() {
+    let manifest = manifest_with_fs_paths(vec!["/home/user/notes/"]);
+    assert!(check_fs_permission(&manifest, "/home/user/notes-secret/file.txt").is_err());
+    assert!(check_fs_permission(&manifest, "/home/user/notesto.txt").is_err());
+}

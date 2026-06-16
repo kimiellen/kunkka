@@ -24,7 +24,11 @@ pub fn check_fs_permission(manifest: &AppManifest, path: &str) -> Result<(), Cap
     for allowed in &fs_config.paths {
         if allowed.ends_with('/') {
             let prefix = normalize_path(allowed);
-            if normalized.starts_with(&prefix) || normalized == prefix.trim_end_matches('/') {
+            let trimmed = prefix.trim_end_matches('/');
+            if normalized.starts_with(trimmed)
+                && (normalized.len() == trimmed.len()
+                    || normalized.as_bytes().get(trimmed.len()) == Some(&b'/'))
+            {
                 return Ok(());
             }
         } else {
