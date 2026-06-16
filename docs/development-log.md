@@ -2,6 +2,25 @@
 
 ## 2026-06-16
 
+### Core Database Foundation
+
+Implemented:
+
+- `crates/kunkka-core/src/database.rs` with `CoreDatabase` struct.
+- SQLite connection pool via sqlx with `runtime-tokio` and `sqlite` features.
+- Embedded migrations via `sqlx::migrate!()`.
+- First migration creates `core_metadata` table with `schema_version` = `1`.
+- SQLite pragmas: `foreign_keys = ON`, `journal_mode = WAL`.
+- Integrated into `CoreRuntime::prepare()` lifecycle.
+
+Verification:
+
+```text
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ### CLI Frontend
 
 Implemented:

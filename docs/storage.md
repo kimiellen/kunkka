@@ -119,6 +119,17 @@ If `$XDG_RUNTIME_DIR` is unavailable, Kunkka may use:
 
 The fallback runtime directory must be `0700` and must not store persistent data.
 
+## Core Database
+
+`kunkka-core` owns the core SQLite database at `$XDG_DATA_HOME/kunkka/kunkka.db`.
+
+Current implementation:
+
+- `crates/kunkka-core/src/database.rs`: `CoreDatabase` with `connect()`, `schema_version()`, `ping()`, `pool()`.
+- `crates/kunkka-core/migrations/`: embedded SQL migrations run at startup.
+- First migration creates `core_metadata` table with `schema_version` = `1`.
+- SQLite pragmas: `foreign_keys = ON`, `journal_mode = WAL`.
+
 ## Current Implementation
 
 `crates/kunkka-core/src/xdg.rs` provides:
