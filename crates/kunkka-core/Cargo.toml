@@ -9,6 +9,7 @@ kunkka-ipc = { path = "../kunkka-ipc" }
 kunkka-protocol = { path = "../kunkka-protocol" }
 kunkka-worker-sdk = { path = "../kunkka-worker-sdk" }
 libc.workspace = true
+postcard.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

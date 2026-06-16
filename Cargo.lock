@@ -896,6 +896,7 @@ dependencies = [
  "kunkka-protocol",
  "kunkka-worker-sdk",
  "libc",
+ "postcard",
  "serde",
  "serde_json",
  "sqlx",
