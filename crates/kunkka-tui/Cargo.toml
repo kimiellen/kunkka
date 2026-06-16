@@ -8,7 +8,7 @@ kunkka-ipc = { path = "../kunkka-ipc" }
 kunkka-protocol = { path = "../kunkka-protocol" }
 ratatui = "0.29"
 crossterm = "0.28"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
