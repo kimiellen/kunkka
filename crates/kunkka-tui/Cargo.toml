@@ -15,4 +15,5 @@ serde_json = "1"
 
 [dev-dependencies]
 kunkka-core = { path = "../kunkka-core" }
+postcard.workspace = true
 tempfile = "3"
