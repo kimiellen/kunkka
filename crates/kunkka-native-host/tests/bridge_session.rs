@@ -364,3 +364,87 @@ async fn session_reuses_connection_for_status_then_dispatch() {
     drop(session);
     wait_for(runtime_task).await.unwrap();
 }
+
+fn approvals_list_request(id: &str) -> NativeRequest {
+    NativeRequest {
+        id: id.to_string(),
+        command: NativeCommand::ApprovalsList,
+    }
+}
+
+#[tokio::test]
+async fn session_approvals_list_returns_empty_pending_approvals() {
+    let (_root, paths) = test_paths();
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+    let runtime_task = tokio::spawn(async move { runtime.run_once().await.unwrap() });
+
+    let mut session = NativeHostSession::new(paths.socket_path.clone());
+    let response = wait_for(session.handle_request(approvals_list_request("req-al-1"))).await;
+
+    assert!(response.ok);
+    assert_eq!(response.id.as_deref(), Some("req-al-1"));
+    assert_eq!(
+        response.result,
+        Some(NativeResult::PendingApprovals { approvals: vec![] })
+    );
+
+    drop(session);
+    wait_for(runtime_task).await.unwrap();
+}
+
+#[tokio::test]
+async fn session_reuses_connection_for_ping_then_approvals_list() {
+    let (_root, paths) = test_paths();
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+    let runtime_task = tokio::spawn(async move { runtime.run_once().await.unwrap() });
+
+    let mut session = NativeHostSession::new(paths.socket_path.clone());
+
+    let ping = wait_for(session.handle_request(ping_request("req-ping"))).await;
+    assert_eq!(ping.result, Some(NativeResult::Pong));
+
+    let approvals = wait_for(session.handle_request(approvals_list_request("req-al-2"))).await;
+    assert_eq!(
+        approvals.result,
+        Some(NativeResult::PendingApprovals { approvals: vec![] })
+    );
+
+    drop(session);
+    wait_for(runtime_task).await.unwrap();
+}
+
+#[tokio::test]
+async fn session_approve_returns_core_unavailable_when_no_core() {
+    let (_root, paths) = test_paths();
+    let mut session = NativeHostSession::new(paths.socket_path.clone());
+
+    let response = wait_for(session.handle_request(NativeRequest {
+        id: "req-approve".to_string(),
+        command: NativeCommand::ApprovalApprove {
+            approval_id: "appr-1".to_string(),
+        },
+    }))
+    .await;
+
+    assert!(!response.ok);
+    assert_eq!(response.id.as_deref(), Some("req-approve"));
+    assert_eq!(response.error.unwrap().code.to_string(), "core_unavailable");
+}
+
+#[tokio::test]
+async fn session_reject_returns_core_unavailable_when_no_core() {
+    let (_root, paths) = test_paths();
+    let mut session = NativeHostSession::new(paths.socket_path.clone());
+
+    let response = wait_for(session.handle_request(NativeRequest {
+        id: "req-reject".to_string(),
+        command: NativeCommand::ApprovalReject {
+            approval_id: "appr-2".to_string(),
+        },
+    }))
+    .await;
+
+    assert!(!response.ok);
+    assert_eq!(response.id.as_deref(), Some("req-reject"));
+    assert_eq!(response.error.unwrap().code.to_string(), "core_unavailable");
+}

@@ -2,10 +2,12 @@ use kunkka_native_host::bridge::{
     core_message_for_command, frontend_dispatch_request_for_command,
     native_result_for_core_response, native_result_for_frontend_dispatch_response,
 };
-use kunkka_native_host::native_protocol::{NativeCommand, NativeResult};
+use kunkka_native_host::native_protocol::{NativeCommand, NativePendingApproval, NativeResult};
 use kunkka_native_host::NativeHostError;
 use kunkka_protocol::core_control::{
-    CoreControlMessage, CorePingRequest, CorePingResponse, CoreStatusRequest, CoreStatusResponse,
+    CoreApprovalDecisionResponse, CoreApproveApprovalRequest, CoreControlMessage,
+    CoreListApprovalsRequest, CoreListApprovalsResponse, CorePingRequest, CorePingResponse,
+    CoreRejectApprovalRequest, CoreStatusRequest, CoreStatusResponse, PendingApproval,
 };
 use kunkka_protocol::frontend_dispatch::FrontendDispatchResponse;
 
@@ -148,6 +150,175 @@ fn rejects_frontend_dispatch_success_with_non_json_content_type() {
             metadata: kunkka_ipc::FrameMetadata::new(),
         },
     ))
+    .unwrap_err();
+
+    assert!(matches!(err, NativeHostError::UnexpectedCoreResponse(_)));
+}
+
+#[test]
+fn maps_approvals_list_command_to_list_pending_approvals() {
+    let message = core_message_for_command(&NativeCommand::ApprovalsList).unwrap();
+
+    assert_eq!(
+        message,
+        CoreControlMessage::ListPendingApprovals(CoreListApprovalsRequest)
+    );
+}
+
+#[test]
+fn maps_approval_approve_command_to_approve_pending_approval() {
+    let message = core_message_for_command(&NativeCommand::ApprovalApprove {
+        approval_id: "appr-1".to_string(),
+    })
+    .unwrap();
+
+    assert_eq!(
+        message,
+        CoreControlMessage::ApprovePendingApproval(CoreApproveApprovalRequest {
+            approval_id: "appr-1".to_string(),
+        })
+    );
+}
+
+#[test]
+fn maps_approval_reject_command_to_reject_pending_approval() {
+    let message = core_message_for_command(&NativeCommand::ApprovalReject {
+        approval_id: "appr-2".to_string(),
+    })
+    .unwrap();
+
+    assert_eq!(
+        message,
+        CoreControlMessage::RejectPendingApproval(CoreRejectApprovalRequest {
+            approval_id: "appr-2".to_string(),
+        })
+    );
+}
+
+#[test]
+fn maps_pending_approvals_result_to_native_pending_approvals() {
+    let result = native_result_for_core_response(
+        &NativeCommand::ApprovalsList,
+        CoreControlMessage::PendingApprovalsResult(CoreListApprovalsResponse {
+            approvals: vec![
+                PendingApproval {
+                    approval_id: "appr-1".to_string(),
+                    app_id: "notes".to_string(),
+                    capability: "notes.search".to_string(),
+                    summary: "Search notes".to_string(),
+                },
+                PendingApproval {
+                    approval_id: "appr-2".to_string(),
+                    app_id: "files".to_string(),
+                    capability: "files.read".to_string(),
+                    summary: "Read files".to_string(),
+                },
+            ],
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(
+        result,
+        NativeResult::PendingApprovals {
+            approvals: vec![
+                NativePendingApproval {
+                    approval_id: "appr-1".to_string(),
+                    app_id: "notes".to_string(),
+                    capability: "notes.search".to_string(),
+                    summary: "Search notes".to_string(),
+                },
+                NativePendingApproval {
+                    approval_id: "appr-2".to_string(),
+                    app_id: "files".to_string(),
+                    capability: "files.read".to_string(),
+                    summary: "Read files".to_string(),
+                },
+            ],
+        }
+    );
+}
+
+#[test]
+fn maps_empty_pending_approvals_result_to_empty_list() {
+    let result = native_result_for_core_response(
+        &NativeCommand::ApprovalsList,
+        CoreControlMessage::PendingApprovalsResult(CoreListApprovalsResponse { approvals: vec![] }),
+    )
+    .unwrap();
+
+    assert_eq!(result, NativeResult::PendingApprovals { approvals: vec![] });
+}
+
+#[test]
+fn maps_approval_approve_decision_result_to_approval_decision() {
+    let result = native_result_for_core_response(
+        &NativeCommand::ApprovalApprove {
+            approval_id: "appr-1".to_string(),
+        },
+        CoreControlMessage::ApprovalDecisionResult(CoreApprovalDecisionResponse),
+    )
+    .unwrap();
+
+    assert_eq!(result, NativeResult::ApprovalDecision);
+}
+
+#[test]
+fn maps_approval_reject_decision_result_to_approval_decision() {
+    let result = native_result_for_core_response(
+        &NativeCommand::ApprovalReject {
+            approval_id: "appr-1".to_string(),
+        },
+        CoreControlMessage::ApprovalDecisionResult(CoreApprovalDecisionResponse),
+    )
+    .unwrap();
+
+    assert_eq!(result, NativeResult::ApprovalDecision);
+}
+
+#[test]
+fn rejects_unexpected_core_response_for_approvals_list() {
+    let err = native_result_for_core_response(
+        &NativeCommand::ApprovalsList,
+        CoreControlMessage::Pong(CorePingResponse),
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, NativeHostError::UnexpectedCoreResponse(_)));
+}
+
+#[test]
+fn rejects_unexpected_core_response_for_approval_approve() {
+    let err = native_result_for_core_response(
+        &NativeCommand::ApprovalApprove {
+            approval_id: "appr-1".to_string(),
+        },
+        CoreControlMessage::Pong(CorePingResponse),
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, NativeHostError::UnexpectedCoreResponse(_)));
+}
+
+#[test]
+fn rejects_unexpected_core_response_for_approval_reject() {
+    let err = native_result_for_core_response(
+        &NativeCommand::ApprovalReject {
+            approval_id: "appr-1".to_string(),
+        },
+        CoreControlMessage::Pong(CorePingResponse),
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, NativeHostError::UnexpectedCoreResponse(_)));
+}
+
+#[test]
+fn rejects_approve_decision_result_for_wrong_command() {
+    let err = native_result_for_core_response(
+        &NativeCommand::Ping,
+        CoreControlMessage::ApprovalDecisionResult(CoreApprovalDecisionResponse),
+    )
     .unwrap_err();
 
     assert!(matches!(err, NativeHostError::UnexpectedCoreResponse(_)));

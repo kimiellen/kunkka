@@ -1,6 +1,6 @@
 use kunkka_native_host::native_protocol::{
     decode_request, error_response, success_response, NativeCommand, NativeErrorCode,
-    NativeRequest, NativeResult,
+    NativePendingApproval, NativeRequest, NativeResult,
 };
 
 #[test]
@@ -168,4 +168,188 @@ fn serializes_platform_error_code_as_string() {
             }
         })
     );
+}
+
+#[test]
+fn decodes_approvals_list_request() {
+    let request = decode_request(br#"{"id":"req-a1","command":"approvals_list"}"#).unwrap();
+
+    assert_eq!(request.id, "req-a1");
+    assert_eq!(request.command, NativeCommand::ApprovalsList);
+}
+
+#[test]
+fn decodes_approval_approve_request() {
+    let request =
+        decode_request(br#"{"id":"req-a2","command":"approval_approve","approval_id":"appr-1"}"#)
+            .unwrap();
+
+    assert_eq!(request.id, "req-a2");
+    assert_eq!(
+        request.command,
+        NativeCommand::ApprovalApprove {
+            approval_id: "appr-1".to_string(),
+        }
+    );
+}
+
+#[test]
+fn decodes_approval_reject_request() {
+    let request =
+        decode_request(br#"{"id":"req-a3","command":"approval_reject","approval_id":"appr-2"}"#)
+            .unwrap();
+
+    assert_eq!(request.id, "req-a3");
+    assert_eq!(
+        request.command,
+        NativeCommand::ApprovalReject {
+            approval_id: "appr-2".to_string(),
+        }
+    );
+}
+
+#[test]
+fn rejects_approval_approve_with_empty_approval_id() {
+    let err = decode_request(br#"{"id":"req-a4","command":"approval_approve","approval_id":""}"#)
+        .unwrap_err();
+
+    assert!(err.to_string().contains("approval_id"));
+}
+
+#[test]
+fn rejects_approval_reject_with_empty_approval_id() {
+    let err = decode_request(br#"{"id":"req-a5","command":"approval_reject","approval_id":""}"#)
+        .unwrap_err();
+
+    assert!(err.to_string().contains("approval_id"));
+}
+
+#[test]
+fn serializes_pending_approvals_response() {
+    let response = success_response(
+        "req-a6",
+        NativeResult::PendingApprovals {
+            approvals: vec![
+                NativePendingApproval {
+                    approval_id: "appr-1".to_string(),
+                    app_id: "notes".to_string(),
+                    capability: "notes.search".to_string(),
+                    summary: "Search notes".to_string(),
+                },
+                NativePendingApproval {
+                    approval_id: "appr-2".to_string(),
+                    app_id: "files".to_string(),
+                    capability: "files.read".to_string(),
+                    summary: "Read files".to_string(),
+                },
+            ],
+        },
+    );
+
+    let value = serde_json::to_value(&response).unwrap();
+
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "id": "req-a6",
+            "ok": true,
+            "result": {
+                "type": "pending_approvals",
+                "approvals": [
+                    {
+                        "approval_id": "appr-1",
+                        "app_id": "notes",
+                        "capability": "notes.search",
+                        "summary": "Search notes"
+                    },
+                    {
+                        "approval_id": "appr-2",
+                        "app_id": "files",
+                        "capability": "files.read",
+                        "summary": "Read files"
+                    }
+                ]
+            }
+        })
+    );
+}
+
+#[test]
+fn serializes_empty_pending_approvals_response() {
+    let response = success_response(
+        "req-a7",
+        NativeResult::PendingApprovals { approvals: vec![] },
+    );
+
+    let value = serde_json::to_value(&response).unwrap();
+
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "id": "req-a7",
+            "ok": true,
+            "result": {
+                "type": "pending_approvals",
+                "approvals": []
+            }
+        })
+    );
+}
+
+#[test]
+fn serializes_approval_decision_response() {
+    let response = success_response("req-a8", NativeResult::ApprovalDecision);
+
+    let value = serde_json::to_value(&response).unwrap();
+
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "id": "req-a8",
+            "ok": true,
+            "result": {
+                "type": "approval_decision"
+            }
+        })
+    );
+}
+
+#[test]
+fn decodes_pending_approvals_from_json() {
+    let json = serde_json::json!({
+        "type": "pending_approvals",
+        "approvals": [
+            {
+                "approval_id": "appr-1",
+                "app_id": "notes",
+                "capability": "notes.search",
+                "summary": "Search notes"
+            }
+        ]
+    });
+
+    let result: NativeResult = serde_json::from_value(json).unwrap();
+
+    assert_eq!(
+        result,
+        NativeResult::PendingApprovals {
+            approvals: vec![NativePendingApproval {
+                approval_id: "appr-1".to_string(),
+                app_id: "notes".to_string(),
+                capability: "notes.search".to_string(),
+                summary: "Search notes".to_string(),
+            }],
+        }
+    );
+}
+
+#[test]
+fn decodes_approval_decision_from_json() {
+    let json = serde_json::json!({
+        "type": "approval_decision"
+    });
+
+    let result: NativeResult = serde_json::from_value(json).unwrap();
+
+    assert_eq!(result, NativeResult::ApprovalDecision);
 }

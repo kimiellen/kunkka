@@ -18,6 +18,13 @@ pub enum NativeCommand {
         method: String,
         payload: serde_json::Value,
     },
+    ApprovalsList,
+    ApprovalApprove {
+        approval_id: String,
+    },
+    ApprovalReject {
+        approval_id: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +53,18 @@ pub enum NativeResult {
         code: String,
         message: String,
     },
+    PendingApprovals {
+        approvals: Vec<NativePendingApproval>,
+    },
+    ApprovalDecision,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NativePendingApproval {
+    pub approval_id: String,
+    pub app_id: String,
+    pub capability: String,
+    pub summary: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,6 +113,16 @@ pub fn decode_request(bytes: &[u8]) -> Result<NativeRequest> {
         if method.is_empty() {
             return Err(NativeHostError::InvalidRequest(
                 "dispatch method is empty".to_string(),
+            ));
+        }
+    }
+
+    if let NativeCommand::ApprovalApprove { approval_id }
+    | NativeCommand::ApprovalReject { approval_id } = &request.command
+    {
+        if approval_id.is_empty() {
+            return Err(NativeHostError::InvalidRequest(
+                "approval_id is empty".to_string(),
             ));
         }
     }

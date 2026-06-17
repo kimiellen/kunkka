@@ -1,11 +1,13 @@
 use crate::native_protocol::{
-    error_response, success_response, NativeCommand, NativeRequest, NativeResponse, NativeResult,
+    error_response, success_response, NativeCommand, NativePendingApproval, NativeRequest,
+    NativeResponse, NativeResult,
 };
 use crate::{NativeHostError, Result};
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload, RequestId, SessionId};
 use kunkka_protocol::core_control::{
-    decode_control_message, encode_control_message, CoreControlMessage, CorePingRequest,
-    CorePingResponse, CoreStatusRequest,
+    decode_control_message, encode_control_message, CoreApprovalDecisionResponse,
+    CoreApproveApprovalRequest, CoreControlMessage, CoreListApprovalsRequest, CorePingRequest,
+    CorePingResponse, CoreRejectApprovalRequest, CoreStatusRequest,
 };
 use kunkka_protocol::frontend_dispatch::{
     decode_frontend_dispatch_message, encode_frontend_dispatch_message, FrontendDispatchMessage,
@@ -22,6 +24,19 @@ pub fn core_message_for_command(command: &NativeCommand) -> Result<CoreControlMe
         NativeCommand::Dispatch { .. } => Err(NativeHostError::InvalidRequest(
             "expected control command".to_string(),
         )),
+        NativeCommand::ApprovalsList => Ok(CoreControlMessage::ListPendingApprovals(
+            CoreListApprovalsRequest,
+        )),
+        NativeCommand::ApprovalApprove { approval_id } => Ok(
+            CoreControlMessage::ApprovePendingApproval(CoreApproveApprovalRequest {
+                approval_id: approval_id.clone(),
+            }),
+        ),
+        NativeCommand::ApprovalReject { approval_id } => Ok(
+            CoreControlMessage::RejectPendingApproval(CoreRejectApprovalRequest {
+                approval_id: approval_id.clone(),
+            }),
+        ),
     }
 }
 
@@ -38,6 +53,28 @@ pub fn native_result_for_core_response(
                 runtime_ready: status.runtime_ready,
             })
         }
+        (NativeCommand::ApprovalsList, CoreControlMessage::PendingApprovalsResult(response)) => {
+            Ok(NativeResult::PendingApprovals {
+                approvals: response
+                    .approvals
+                    .into_iter()
+                    .map(|a| NativePendingApproval {
+                        approval_id: a.approval_id,
+                        app_id: a.app_id,
+                        capability: a.capability,
+                        summary: a.summary,
+                    })
+                    .collect(),
+            })
+        }
+        (
+            NativeCommand::ApprovalApprove { .. },
+            CoreControlMessage::ApprovalDecisionResult(CoreApprovalDecisionResponse),
+        ) => Ok(NativeResult::ApprovalDecision),
+        (
+            NativeCommand::ApprovalReject { .. },
+            CoreControlMessage::ApprovalDecisionResult(CoreApprovalDecisionResponse),
+        ) => Ok(NativeResult::ApprovalDecision),
         (command, message) => Err(NativeHostError::UnexpectedCoreResponse(format!(
             "unexpected core response for {command:?}: {message:?}"
         ))),
@@ -132,7 +169,11 @@ impl NativeHostSession {
         let id = request.id.clone();
 
         match request.command.clone() {
-            NativeCommand::Ping | NativeCommand::Status => {
+            NativeCommand::Ping
+            | NativeCommand::Status
+            | NativeCommand::ApprovalsList
+            | NativeCommand::ApprovalApprove { .. }
+            | NativeCommand::ApprovalReject { .. } => {
                 let command = request.command.clone();
                 let core_message = match core_message_for_command(&command) {
                     Ok(message) => message,
