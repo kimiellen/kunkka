@@ -2,6 +2,13 @@ use crate::app_manifest::AppManifest;
 use crate::capability::CapabilityError;
 use std::path::{Component, PathBuf};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellPolicyDecision {
+    Allow,
+    Ask,
+    Deny,
+}
+
 pub fn check_fs_permission(manifest: &AppManifest, path: &str) -> Result<(), CapabilityError> {
     let fs_config = manifest
         .capabilities
@@ -46,6 +53,33 @@ pub fn check_fs_permission(manifest: &AppManifest, path: &str) -> Result<(), Cap
             path, manifest.app_id
         ),
     })
+}
+
+pub fn decide_shell_policy(manifest: &AppManifest, commands: &[String]) -> ShellPolicyDecision {
+    let Some(shell_config) = manifest.capabilities.shell.as_ref() else {
+        return ShellPolicyDecision::Deny;
+    };
+
+    let mut saw_ask = false;
+
+    for command in commands {
+        if shell_config.allow.iter().any(|allowed| allowed == command) {
+            continue;
+        }
+
+        if shell_config.ask.iter().any(|ask| ask == command) {
+            saw_ask = true;
+            continue;
+        }
+
+        return ShellPolicyDecision::Deny;
+    }
+
+    if saw_ask {
+        ShellPolicyDecision::Ask
+    } else {
+        ShellPolicyDecision::Allow
+    }
 }
 
 fn normalize_path(path: &str) -> String {

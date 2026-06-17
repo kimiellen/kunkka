@@ -441,3 +441,60 @@ fn manifest_rejects_relative_fs_path() {
         CoreError::ManifestInvalid(message) if message.contains("non-absolute")
     ));
 }
+
+#[test]
+fn manifest_loads_shell_allow_and_ask_lists() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": []
+            },
+            "capabilities": {
+                "shell": {
+                    "allow": ["rg", "wc"],
+                    "ask": ["curl"]
+                }
+            }
+        }"#,
+    );
+
+    let registry = AppRegistry::load(&paths).unwrap();
+    let manifest = registry.get("notes").unwrap();
+    let shell_caps = manifest.capabilities.shell.as_ref().unwrap();
+
+    assert_eq!(shell_caps.allow, vec!["rg", "wc"]);
+    assert_eq!(shell_caps.ask, vec!["curl"]);
+}
+
+#[test]
+fn manifest_rejects_shell_command_present_in_allow_and_ask() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "notes.json",
+        r#"{
+            "app_id": "notes",
+            "worker": {
+                "program": "/usr/bin/notes-worker",
+                "args": []
+            },
+            "capabilities": {
+                "shell": {
+                    "allow": ["curl"],
+                    "ask": ["curl"]
+                }
+            }
+        }"#,
+    );
+
+    let err = AppRegistry::load(&paths).unwrap_err();
+    assert!(matches!(
+        err,
+        CoreError::ManifestInvalid(message) if message.contains("allow and ask")
+    ));
+}

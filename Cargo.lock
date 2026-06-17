@@ -881,6 +881,7 @@ dependencies = [
  "kunkka-protocol",
  "kunkka-worker-sdk",
  "libc",
+ "postcard",
  "serde",
  "serde_json",
  "tempfile",
@@ -954,6 +955,7 @@ dependencies = [
  "kunkka-ipc",
  "kunkka-protocol",
  "libc",
+ "postcard",
  "ratatui",
  "serde",
  "serde_json",
@@ -965,6 +967,7 @@ dependencies = [
 name = "kunkka-worker-sdk"
 version = "0.1.0"
 dependencies = [
+ "kunkka-core",
  "kunkka-ipc",
  "postcard",
  "serde",

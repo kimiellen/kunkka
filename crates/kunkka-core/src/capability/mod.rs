@@ -1,6 +1,9 @@
 pub mod fs;
 pub mod permissions;
+pub mod shell;
 
+use crate::app_manifest::AppRegistry;
+use crate::approval::ApprovalStore;
 use kunkka_ipc::{FrameMetadata, Payload};
 use serde::{Deserialize, Serialize};
 
@@ -59,15 +62,17 @@ pub fn decode_capability_response(payload: &Payload) -> crate::Result<Capability
 }
 
 pub async fn handle_capability_request(
-    worker_manager: &crate::worker_dispatch::WorkerManager,
+    app_registry: &AppRegistry,
+    approvals: &mut ApprovalStore,
     request: CapabilityRequest,
 ) -> CapabilityResponse {
-    let result = handle_capability_inner(worker_manager, &request).await;
+    let result = handle_capability_inner(app_registry, approvals, &request).await;
     CapabilityResponse { result }
 }
 
 async fn handle_capability_inner(
-    worker_manager: &crate::worker_dispatch::WorkerManager,
+    app_registry: &AppRegistry,
+    approvals: &mut ApprovalStore,
     request: &CapabilityRequest,
 ) -> Result<Vec<u8>, CapabilityError> {
     if request.app_id.is_empty() {
@@ -77,8 +82,7 @@ async fn handle_capability_inner(
         });
     }
 
-    let manifest = worker_manager
-        .app_registry()
+    let manifest = app_registry
         .get(&request.app_id)
         .ok_or_else(|| CapabilityError {
             code: "app_not_found".to_string(),
@@ -87,6 +91,9 @@ async fn handle_capability_inner(
 
     match request.capability.as_str() {
         "fs" => fs::handle_fs_request(manifest, &request.method, &request.params).await,
+        "shell" => {
+            shell::handle_shell_request(manifest, &request.method, &request.params, approvals).await
+        }
         _ => Err(CapabilityError {
             code: "unknown_capability".to_string(),
             message: format!("unknown capability: {}", request.capability),

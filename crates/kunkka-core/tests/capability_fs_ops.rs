@@ -23,6 +23,7 @@ fn manifest_with_dir(dir: &std::path::Path) -> AppManifest {
             fs: Some(FsCapabilityConfig {
                 paths: vec![format!("{}/", dir.display())],
             }),
+            shell: None,
         },
         idle_timeout_ms: 300_000,
         startup_timeout_ms: 10_000,

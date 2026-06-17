@@ -1,4 +1,5 @@
 pub mod app_manifest;
+pub mod approval;
 pub mod capability;
 pub mod database;
 pub mod error;

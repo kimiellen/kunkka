@@ -22,11 +22,45 @@ pub struct CoreStatusResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreListApprovalsRequest;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingApproval {
+    pub approval_id: String,
+    pub app_id: String,
+    pub capability: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreListApprovalsResponse {
+    pub approvals: Vec<PendingApproval>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreApproveApprovalRequest {
+    pub approval_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreRejectApprovalRequest {
+    pub approval_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreApprovalDecisionResponse;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CoreControlMessage {
     Ping(CorePingRequest),
     Pong(CorePingResponse),
     Status(CoreStatusRequest),
     StatusResult(CoreStatusResponse),
+    ListPendingApprovals(CoreListApprovalsRequest),
+    PendingApprovalsResult(CoreListApprovalsResponse),
+    ApprovePendingApproval(CoreApproveApprovalRequest),
+    RejectPendingApproval(CoreRejectApprovalRequest),
+    ApprovalDecisionResult(CoreApprovalDecisionResponse),
 }
 
 pub fn encode_control_message(message: &CoreControlMessage) -> Result<Payload> {

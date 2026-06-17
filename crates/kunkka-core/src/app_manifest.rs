@@ -41,11 +41,18 @@ pub struct FrontendDispatchPermissions {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CapabilitiesConfig {
     pub fs: Option<FsCapabilityConfig>,
+    pub shell: Option<ShellCapabilityConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FsCapabilityConfig {
     pub paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ShellCapabilityConfig {
+    pub allow: Vec<String>,
+    pub ask: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,12 +97,22 @@ struct RawFrontendDispatchPermissions {
 struct RawCapabilitiesConfig {
     #[serde(default)]
     fs: Option<RawFsCapabilityConfig>,
+    #[serde(default)]
+    shell: Option<RawShellCapabilityConfig>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawFsCapabilityConfig {
     #[serde(default)]
     paths: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawShellCapabilityConfig {
+    #[serde(default)]
+    allow: Option<Vec<String>>,
+    #[serde(default)]
+    ask: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -143,7 +160,11 @@ impl AppManifest {
                 let fs = raw_caps.fs.map(|raw_fs| FsCapabilityConfig {
                     paths: raw_fs.paths.unwrap_or_default(),
                 });
-                CapabilitiesConfig { fs }
+                let shell = raw_caps.shell.map(|raw_shell| ShellCapabilityConfig {
+                    allow: raw_shell.allow.unwrap_or_default(),
+                    ask: raw_shell.ask.unwrap_or_default(),
+                });
+                CapabilitiesConfig { fs, shell }
             }
             None => CapabilitiesConfig::default(),
         };
@@ -199,6 +220,36 @@ impl AppManifest {
                     return Err(CoreError::ManifestInvalid(format!(
                         "{}: capabilities.fs.paths contains non-absolute path: {fs_path}",
                         path.display()
+                    )));
+                }
+            }
+        }
+
+        if let Some(shell_caps) = &self.capabilities.shell {
+            for command in &shell_caps.allow {
+                if command.trim().is_empty() {
+                    return Err(CoreError::ManifestInvalid(format!(
+                        "{}: capabilities.shell.allow contains blank command",
+                        path.display()
+                    )));
+                }
+            }
+
+            for command in &shell_caps.ask {
+                if command.trim().is_empty() {
+                    return Err(CoreError::ManifestInvalid(format!(
+                        "{}: capabilities.shell.ask contains blank command",
+                        path.display()
+                    )));
+                }
+            }
+
+            for command in &shell_caps.allow {
+                if shell_caps.ask.iter().any(|ask| ask == command) {
+                    return Err(CoreError::ManifestInvalid(format!(
+                        "{}: capabilities.shell command {:?} cannot appear in both allow and ask",
+                        path.display(),
+                        command
                     )));
                 }
             }

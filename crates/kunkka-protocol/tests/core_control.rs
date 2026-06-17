@@ -1,6 +1,7 @@
 use kunkka_protocol::core_control::{
-    decode_control_message, encode_control_message, CoreControlMessage, CorePingRequest,
-    CoreStatusResponse, CORE_CONTROL_CONTENT_TYPE, CORE_CONTROL_SCHEMA,
+    decode_control_message, encode_control_message, CoreControlMessage, CoreListApprovalsResponse,
+    CorePingRequest, CoreStatusResponse, PendingApproval, CORE_CONTROL_CONTENT_TYPE,
+    CORE_CONTROL_SCHEMA,
 };
 
 fn assert_worker_count_is_u64(_: u64) {}
@@ -37,6 +38,23 @@ fn status_result_payload_roundtrips_with_runtime_state() {
     if let CoreControlMessage::StatusResult(response) = &decoded {
         assert_worker_count_is_u64(response.worker_count);
     }
+
+    assert_eq!(decoded, message);
+}
+
+#[test]
+fn pending_approvals_result_roundtrips() {
+    let message = CoreControlMessage::PendingApprovalsResult(CoreListApprovalsResponse {
+        approvals: vec![PendingApproval {
+            approval_id: "appr_1".to_string(),
+            app_id: "notes".to_string(),
+            capability: "shell".to_string(),
+            summary: "curl https://example.com".to_string(),
+        }],
+    });
+
+    let payload = encode_control_message(&message).unwrap();
+    let decoded = decode_control_message(&payload).unwrap();
 
     assert_eq!(decoded, message);
 }

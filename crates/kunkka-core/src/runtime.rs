@@ -1,4 +1,5 @@
 use crate::app_manifest::AppRegistry;
+use crate::approval::ApprovalStore;
 use crate::capability::{
     decode_capability_request, encode_capability_response, handle_capability_request,
     CAPABILITY_SCHEMA,
@@ -11,8 +12,9 @@ use crate::xdg::KunkkaPaths;
 use crate::{CoreError, Result};
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload};
 use kunkka_protocol::core_control::{
-    decode_control_message, encode_control_message, CoreControlMessage, CorePingResponse,
-    CoreStatusResponse, CORE_CONTROL_SCHEMA,
+    decode_control_message, encode_control_message, CoreApprovalDecisionResponse,
+    CoreControlMessage, CoreListApprovalsResponse, CorePingResponse, CoreStatusResponse,
+    CORE_CONTROL_SCHEMA,
 };
 use kunkka_protocol::frontend_dispatch::{
     decode_frontend_dispatch_message, encode_frontend_dispatch_message, FrontendDispatchMessage,
@@ -27,6 +29,7 @@ const IDLE_REAP_INTERVAL: Duration = Duration::from_millis(100);
 pub struct CoreRuntime {
     server: CoreIpcServer,
     worker_manager: WorkerManager,
+    approvals: ApprovalStore,
     _database: CoreDatabase,
 }
 
@@ -43,6 +46,7 @@ impl CoreRuntime {
                 app_registry,
                 paths.socket_path.clone(),
             ),
+            approvals: ApprovalStore::new(),
             _database: database,
         })
     }
@@ -63,6 +67,10 @@ impl CoreRuntime {
         self.worker_manager.reap_idle_workers();
     }
 
+    pub fn expire_pending_approval_for_test(&mut self, approval_id: &str) {
+        self.approvals.expire(approval_id);
+    }
+
     pub async fn dispatch(
         &mut self,
         app_id: AppId,
@@ -79,6 +87,7 @@ impl CoreRuntime {
         run_connection(
             &self.server,
             &mut self.worker_manager,
+            &mut self.approvals,
             &self._database,
             connection,
         )
@@ -93,7 +102,7 @@ impl CoreRuntime {
             tokio::select! {
                 accepted = self.server.accept_one() => {
                     let connection = accepted?;
-                    run_connection(&self.server, &mut self.worker_manager, &self._database, connection).await?;
+                    run_connection(&self.server, &mut self.worker_manager, &mut self.approvals, &self._database, connection).await?;
                 }
                 _ = reap_interval.tick() => {
                     self.worker_manager.reap_idle_workers();
@@ -106,6 +115,7 @@ impl CoreRuntime {
 async fn run_connection(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
+    approvals: &mut ApprovalStore,
     database: &CoreDatabase,
     mut connection: IpcConnection,
 ) -> Result<()> {
@@ -120,10 +130,18 @@ async fn run_connection(
                 .await
         }
         Some(CORE_CONTROL_SCHEMA | FRONTEND_DISPATCH_SCHEMA) => {
-            run_frontend_connection(server, worker_manager, database, connection, first_frame).await
+            run_frontend_connection(
+                server,
+                worker_manager,
+                approvals,
+                database,
+                connection,
+                first_frame,
+            )
+            .await
         }
         Some(CAPABILITY_SCHEMA) => {
-            handle_capability_connection(worker_manager, connection, first_frame).await
+            handle_capability_connection(worker_manager, approvals, connection, first_frame).await
         }
         Some(schema) => Err(CoreError::InvalidCoreFrame(format!(
             "unknown payload schema: {schema}"
@@ -137,11 +155,13 @@ async fn run_connection(
 async fn run_frontend_connection(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
+    approvals: &mut ApprovalStore,
     database: &CoreDatabase,
     mut connection: IpcConnection,
     first_frame: Frame,
 ) -> Result<()> {
-    let response = handle_frontend_frame(server, worker_manager, database, first_frame).await?;
+    let response =
+        handle_frontend_frame(server, worker_manager, approvals, database, first_frame).await?;
     connection.send_frame(&response).await?;
     let mut reap_interval = interval(IDLE_REAP_INTERVAL);
     reap_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -152,7 +172,7 @@ async fn run_frontend_connection(
                 let Some(frame) = frame? else {
                     return Ok(());
                 };
-                let response = handle_frontend_frame(server, worker_manager, database, frame).await?;
+                let response = handle_frontend_frame(server, worker_manager, approvals, database, frame).await?;
                 connection.send_frame(&response).await?;
             }
             _ = reap_interval.tick() => {
@@ -164,6 +184,7 @@ async fn run_frontend_connection(
 
 async fn handle_capability_connection(
     worker_manager: &WorkerManager,
+    approvals: &mut ApprovalStore,
     mut connection: IpcConnection,
     frame: Frame,
 ) -> Result<()> {
@@ -182,7 +203,8 @@ async fn handle_capability_connection(
     };
 
     let request = decode_capability_request(&payload)?;
-    let response = handle_capability_request(worker_manager, request).await;
+    let response =
+        handle_capability_request(worker_manager.app_registry(), approvals, request).await;
     let response_payload = encode_capability_response(&response)?;
 
     let response_frame = Frame::Response {
@@ -201,11 +223,14 @@ async fn handle_capability_connection(
 async fn handle_frontend_frame(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
+    approvals: &mut ApprovalStore,
     database: &CoreDatabase,
     frame: Frame,
 ) -> Result<Frame> {
     match frame_schema(&frame) {
-        Some(CORE_CONTROL_SCHEMA) => handle_control_frame(server, worker_manager.registry(), frame),
+        Some(CORE_CONTROL_SCHEMA) => {
+            handle_control_frame(server, worker_manager.registry(), approvals, frame)
+        }
         Some(FRONTEND_DISPATCH_SCHEMA) => {
             handle_frontend_dispatch_frame(server, worker_manager, database, frame).await
         }
@@ -365,6 +390,7 @@ fn dispatch_platform_error_code(error: &CoreError) -> &'static str {
 fn handle_control_frame(
     server: &CoreIpcServer,
     registry: &WorkerRegistry,
+    approvals: &mut ApprovalStore,
     frame: Frame,
 ) -> Result<Frame> {
     let Frame::Request {
@@ -388,6 +414,19 @@ fn handle_control_frame(
             socket_path: server.socket_path().to_string_lossy().into_owned(),
             runtime_ready: true,
         }),
+        CoreControlMessage::ListPendingApprovals(_) => {
+            CoreControlMessage::PendingApprovalsResult(CoreListApprovalsResponse {
+                approvals: approvals.list_pending(),
+            })
+        }
+        CoreControlMessage::ApprovePendingApproval(request) => {
+            approvals.approve(&request.approval_id);
+            CoreControlMessage::ApprovalDecisionResult(CoreApprovalDecisionResponse)
+        }
+        CoreControlMessage::RejectPendingApproval(request) => {
+            approvals.reject(&request.approval_id);
+            CoreControlMessage::ApprovalDecisionResult(CoreApprovalDecisionResponse)
+        }
         _ => {
             return Err(CoreError::InvalidCoreFrame(
                 "expected core control request".to_string(),
