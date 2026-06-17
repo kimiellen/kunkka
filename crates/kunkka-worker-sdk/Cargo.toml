@@ -11,5 +11,6 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+kunkka-core = { path = "../kunkka-core" }
 tempfile.workspace = true
 tokio.workspace = true

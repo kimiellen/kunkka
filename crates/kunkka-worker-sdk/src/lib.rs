@@ -1,8 +1,14 @@
+pub mod capability;
 pub mod client;
 pub mod codec;
 pub mod error;
 pub mod types;
 
+pub use capability::{
+    call_capability, decode_capability_request, decode_capability_response,
+    encode_capability_request, encode_capability_response, CapabilityError, CapabilityRequest,
+    CapabilityResponse, CAPABILITY_CONTENT_TYPE, CAPABILITY_SCHEMA,
+};
 pub use client::{DispatchRequestContext, WorkerClient};
 pub use codec::{
     decode_worker_message, encode_worker_message, WORKER_PROTOCOL_CONTENT_TYPE,
