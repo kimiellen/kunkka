@@ -1,3 +1,4 @@
+use kunkka_protocol::core_control::PendingApproval;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,6 +25,21 @@ pub enum CliResult {
     DispatchError {
         code: String,
         message: String,
+    },
+    PendingApprovals {
+        approvals: Vec<PendingApproval>,
+    },
+    ApprovalDecision,
+    ShellResult {
+        stdout: String,
+        stderr: String,
+        exit_code: i32,
+    },
+    ApprovalPrompt {
+        approval_id: String,
+        app_id: String,
+        capability: String,
+        summary: String,
     },
 }
 

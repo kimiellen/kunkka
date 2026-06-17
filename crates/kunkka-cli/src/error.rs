@@ -17,6 +17,9 @@ pub enum CliError {
 
     #[error("core platform error: {code}: {message}")]
     CorePlatform { code: String, message: String },
+
+    #[error("approval rejected by user")]
+    ApprovalRejected,
 }
 
 impl CliError {
@@ -27,6 +30,7 @@ impl CliError {
             Self::CoreIpc(_) => "core_ipc_error",
             Self::UnexpectedCoreResponse(_) => "unexpected_core_response",
             Self::CorePlatform { .. } => "core_error",
+            Self::ApprovalRejected => "approval_rejected",
         }
     }
 

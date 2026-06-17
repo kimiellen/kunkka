@@ -11,6 +11,16 @@ pub struct Cli {
 pub enum CliCommand {
     Ping,
     Status,
+    Shell {
+        #[arg(long = "app", value_parser = validate_non_empty)]
+        app_id: String,
+        #[arg(long, value_parser = validate_non_empty)]
+        command: String,
+    },
+    Approvals {
+        #[command(subcommand)]
+        command: ApprovalCommand,
+    },
     Dispatch {
         #[arg(long = "app", value_parser = validate_non_empty)]
         app_id: String,
@@ -18,6 +28,19 @@ pub enum CliCommand {
         method: String,
         #[arg(long, value_parser = parse_json_payload)]
         payload: serde_json::Value,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ApprovalCommand {
+    List,
+    Approve {
+        #[arg(long = "id", value_parser = validate_non_empty)]
+        approval_id: String,
+    },
+    Reject {
+        #[arg(long = "id", value_parser = validate_non_empty)]
+        approval_id: String,
     },
 }
 
