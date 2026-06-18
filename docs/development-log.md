@@ -1,5 +1,26 @@
 # Kunkka Development Log
 
+## 2026-06-18
+
+### HTTP Capability (External API Request)
+
+Implemented:
+
+- `HttpRequestParams`/`HttpResponse` protocol types with postcard codec in `capability/http.rs`.
+- App manifest `capabilities.http.domains` domain whitelist field with validation.
+- Domain whitelist matching: exact match, case-insensitive, `http` and `https` schemes only.
+- HTTP client with reqwest: fixed 30s timeout, auto-redirect (max 10) with whitelist enforcement, gzip/deflate compression, HTTP/1.1 + HTTP/2 auto-negotiation, no proxy.
+- Error codes: `invalid_params`, `permission_denied`, `scheme_not_allowed`, `timeout`, `io_error`.
+- Tests: manifest loading (4), unit tests (7), runtime integration tests (4).
+
+Verification:
+
+```text
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ## 2026-06-17
 
 ### Capability Layer (File System)
