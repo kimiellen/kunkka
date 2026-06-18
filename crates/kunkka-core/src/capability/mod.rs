@@ -1,4 +1,5 @@
 pub mod fs;
+pub mod http;
 pub mod permissions;
 pub mod shell;
 
@@ -91,6 +92,7 @@ async fn handle_capability_inner(
 
     match request.capability.as_str() {
         "fs" => fs::handle_fs_request(manifest, &request.method, &request.params).await,
+        "http" => http::handle_http_request(manifest, &request.method, &request.params).await,
         "shell" => {
             shell::handle_shell_request(manifest, &request.method, &request.params, approvals).await
         }
