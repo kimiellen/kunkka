@@ -2,7 +2,7 @@ use crate::app_manifest::AppRegistry;
 use crate::approval::ApprovalStore;
 use crate::capability::{
     decode_capability_request, encode_capability_response, handle_capability_request,
-    CAPABILITY_SCHEMA,
+    sqlite::SqliteConnectionStore, CAPABILITY_SCHEMA,
 };
 use crate::database::CoreDatabase;
 use crate::ipc_server::CoreIpcServer;
@@ -31,6 +31,8 @@ pub struct CoreRuntime {
     worker_manager: WorkerManager,
     approvals: ApprovalStore,
     _database: CoreDatabase,
+    sqlite_connections: SqliteConnectionStore,
+    data_dir: std::path::PathBuf,
 }
 
 impl CoreRuntime {
@@ -48,6 +50,8 @@ impl CoreRuntime {
             ),
             approvals: ApprovalStore::new(),
             _database: database,
+            sqlite_connections: SqliteConnectionStore::new(),
+            data_dir: paths.data_dir.clone(),
         })
     }
 
@@ -89,6 +93,8 @@ impl CoreRuntime {
             &mut self.worker_manager,
             &mut self.approvals,
             &self._database,
+            &mut self.sqlite_connections,
+            &self.data_dir,
             connection,
         )
         .await
@@ -102,7 +108,7 @@ impl CoreRuntime {
             tokio::select! {
                 accepted = self.server.accept_one() => {
                     let connection = accepted?;
-                    run_connection(&self.server, &mut self.worker_manager, &mut self.approvals, &self._database, connection).await?;
+                    run_connection(&self.server, &mut self.worker_manager, &mut self.approvals, &self._database, &mut self.sqlite_connections, &self.data_dir, connection).await?;
                 }
                 _ = reap_interval.tick() => {
                     self.worker_manager.reap_idle_workers();
@@ -117,6 +123,8 @@ async fn run_connection(
     worker_manager: &mut WorkerManager,
     approvals: &mut ApprovalStore,
     database: &CoreDatabase,
+    sqlite_connections: &mut SqliteConnectionStore,
+    data_dir: &std::path::Path,
     mut connection: IpcConnection,
 ) -> Result<()> {
     let Some(first_frame) = connection.recv_frame().await? else {
@@ -141,7 +149,15 @@ async fn run_connection(
             .await
         }
         Some(CAPABILITY_SCHEMA) => {
-            handle_capability_connection(worker_manager, approvals, connection, first_frame).await
+            handle_capability_connection(
+                worker_manager,
+                approvals,
+                sqlite_connections,
+                data_dir,
+                connection,
+                first_frame,
+            )
+            .await
         }
         Some(schema) => Err(CoreError::InvalidCoreFrame(format!(
             "unknown payload schema: {schema}"
@@ -185,6 +201,8 @@ async fn run_frontend_connection(
 async fn handle_capability_connection(
     worker_manager: &WorkerManager,
     approvals: &mut ApprovalStore,
+    sqlite_connections: &mut SqliteConnectionStore,
+    data_dir: &std::path::Path,
     mut connection: IpcConnection,
     frame: Frame,
 ) -> Result<()> {
@@ -203,8 +221,14 @@ async fn handle_capability_connection(
     };
 
     let request = decode_capability_request(&payload)?;
-    let response =
-        handle_capability_request(worker_manager.app_registry(), approvals, request).await;
+    let response = handle_capability_request(
+        worker_manager.app_registry(),
+        approvals,
+        request,
+        Some(sqlite_connections),
+        data_dir,
+    )
+    .await;
     let response_payload = encode_capability_response(&response)?;
 
     let response_frame = Frame::Response {

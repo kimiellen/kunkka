@@ -2,11 +2,13 @@ pub mod fs;
 pub mod http;
 pub mod permissions;
 pub mod shell;
+pub mod sqlite;
 
 use crate::app_manifest::AppRegistry;
 use crate::approval::ApprovalStore;
 use kunkka_ipc::{FrameMetadata, Payload};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 pub const CAPABILITY_CONTENT_TYPE: &str = "application/vnd.kunkka.capability.v1+postcard";
 pub const CAPABILITY_SCHEMA: &str = "kunkka.capability.v1";
@@ -66,8 +68,12 @@ pub async fn handle_capability_request(
     app_registry: &AppRegistry,
     approvals: &mut ApprovalStore,
     request: CapabilityRequest,
+    sqlite_connections: Option<&mut sqlite::SqliteConnectionStore>,
+    data_dir: &Path,
 ) -> CapabilityResponse {
-    let result = handle_capability_inner(app_registry, approvals, &request).await;
+    let result =
+        handle_capability_inner(app_registry, approvals, &request, sqlite_connections, data_dir)
+            .await;
     CapabilityResponse { result }
 }
 
@@ -75,6 +81,8 @@ async fn handle_capability_inner(
     app_registry: &AppRegistry,
     approvals: &mut ApprovalStore,
     request: &CapabilityRequest,
+    sqlite_connections: Option<&mut sqlite::SqliteConnectionStore>,
+    data_dir: &Path,
 ) -> Result<Vec<u8>, CapabilityError> {
     if request.app_id.is_empty() {
         return Err(CapabilityError {
@@ -95,6 +103,20 @@ async fn handle_capability_inner(
         "http" => http::handle_http_request(manifest, &request.method, &request.params).await,
         "shell" => {
             shell::handle_shell_request(manifest, &request.method, &request.params, approvals).await
+        }
+        "sqlite" => {
+            let store = sqlite_connections.ok_or_else(|| CapabilityError {
+                code: "unavailable".to_string(),
+                message: "sqlite connection store not available".to_string(),
+            })?;
+            sqlite::handle_sqlite_request(
+                manifest,
+                &request.method,
+                &request.params,
+                store,
+                data_dir,
+            )
+            .await
         }
         _ => Err(CapabilityError {
             code: "unknown_capability".to_string(),
