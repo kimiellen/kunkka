@@ -87,9 +87,23 @@ pub async fn handle_http_request(
         });
     }
 
+    let allowed_domains: Vec<String> = http_config.domains.clone();
+    let redirect_policy = reqwest::redirect::Policy::custom(move |attempt| {
+        if attempt.previous().len() >= MAX_REDIRECTS {
+            return attempt.stop();
+        }
+        match attempt.url().host_str() {
+            Some(host) if allowed_domains.iter().any(|d| d.eq_ignore_ascii_case(host)) => {
+                attempt.follow()
+            }
+            _ => attempt.error(std::io::Error::other("redirect to non-whitelisted domain")),
+        }
+    });
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .redirect(reqwest::redirect::Policy::limited(MAX_REDIRECTS))
+        .no_proxy()
+        .redirect(redirect_policy)
         .build()
         .map_err(|e| CapabilityError {
             code: "io_error".to_string(),
