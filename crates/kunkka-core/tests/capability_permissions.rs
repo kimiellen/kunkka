@@ -19,6 +19,7 @@ fn manifest_with_fs_paths(paths: Vec<&str>) -> AppManifest {
                 paths: paths.into_iter().map(String::from).collect(),
             }),
             shell: None,
+            http: None,
         },
         idle_timeout_ms: 300_000,
         startup_timeout_ms: 10_000,

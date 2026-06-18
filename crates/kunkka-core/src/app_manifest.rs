@@ -42,6 +42,7 @@ pub struct FrontendDispatchPermissions {
 pub struct CapabilitiesConfig {
     pub fs: Option<FsCapabilityConfig>,
     pub shell: Option<ShellCapabilityConfig>,
+    pub http: Option<HttpCapabilityConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -53,6 +54,11 @@ pub struct FsCapabilityConfig {
 pub struct ShellCapabilityConfig {
     pub allow: Vec<String>,
     pub ask: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HttpCapabilityConfig {
+    pub domains: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,6 +105,8 @@ struct RawCapabilitiesConfig {
     fs: Option<RawFsCapabilityConfig>,
     #[serde(default)]
     shell: Option<RawShellCapabilityConfig>,
+    #[serde(default)]
+    http: Option<RawHttpCapabilityConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,6 +121,12 @@ struct RawShellCapabilityConfig {
     allow: Option<Vec<String>>,
     #[serde(default)]
     ask: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawHttpCapabilityConfig {
+    #[serde(default)]
+    domains: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -164,7 +178,10 @@ impl AppManifest {
                     allow: raw_shell.allow.unwrap_or_default(),
                     ask: raw_shell.ask.unwrap_or_default(),
                 });
-                CapabilitiesConfig { fs, shell }
+                let http = raw_caps.http.map(|raw_http| HttpCapabilityConfig {
+                    domains: raw_http.domains.unwrap_or_default(),
+                });
+                CapabilitiesConfig { fs, shell, http }
             }
             None => CapabilitiesConfig::default(),
         };
@@ -250,6 +267,17 @@ impl AppManifest {
                         "{}: capabilities.shell command {:?} cannot appear in both allow and ask",
                         path.display(),
                         command
+                    )));
+                }
+            }
+        }
+
+        if let Some(http_caps) = &self.capabilities.http {
+            for domain in &http_caps.domains {
+                if domain.trim().is_empty() {
+                    return Err(CoreError::ManifestInvalid(format!(
+                        "{}: capabilities.http.domains contains blank domain",
+                        path.display()
                     )));
                 }
             }
