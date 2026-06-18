@@ -2,6 +2,28 @@
 
 ## 2026-06-18
 
+### SQLite Capability
+
+Implemented:
+
+- `SqliteConnectionStore` for per-app connection management.
+- Protocol types: `SqliteQueryParams`, `SqliteExecuteParams`, `SqliteResponse` with postcard codec.
+- App data directory `$XDG_DATA_HOME/kunkka/app-data/<app_id>/app.db` with auto-creation.
+- SQLite pragmas: WAL mode, synchronous=FULL, foreign_keys=ON.
+- SQL operations: open, query, execute, close.
+- Positional parameter binding via `SqliteValue` enum.
+- Query results: column names + row data with postcard-encoded values.
+- Error codes: invalid_params, database_error, io_error, not_open.
+- Tests: open, execute, query, close, not_open scenarios.
+
+Verification:
+
+```text
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ### HTTP Capability (External API Request)
 
 Implemented:

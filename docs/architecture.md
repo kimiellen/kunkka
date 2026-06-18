@@ -110,6 +110,7 @@ Core 内部 capability 层：
 - `capability/permissions.rs`：路径白名单校验，支持目录前缀匹配和精确文件匹配，路径规范化。
 - `capability/fs.rs`：文件系统操作（`read_file`、`write_file`、`list_dir`）。
 - `capability/http.rs`：HTTP capability for external API requests with domain whitelist.
+- `capability/sqlite.rs`：SQLite capability for app database management with per-app connection store.
 - App manifest `capabilities.fs.paths` 白名单配置。
 
 Core runtime 当前按 `Payload.schema` 分发请求：
