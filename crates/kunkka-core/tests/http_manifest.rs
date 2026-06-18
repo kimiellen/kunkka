@@ -99,3 +99,32 @@ fn test_http_blank_domain_rejected() {
         CoreError::ManifestInvalid(msg) if msg.contains("blank domain")
     ));
 }
+
+#[test]
+fn test_http_domain_with_whitespace_rejected() {
+    let (_root, paths) = test_paths();
+    write_manifest(
+        &paths,
+        "test.json",
+        r#"{
+            "app_id": "test",
+            "worker": {
+                "program": "/usr/bin/test",
+                "args": []
+            },
+            "capabilities": {
+                "http": {
+                    "domains": [" api.github.com "]
+                }
+            }
+        }"#,
+    );
+
+    let result = AppManifest::load_file(paths.config_dir.join("apps/test.json"));
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(matches!(
+        err,
+        CoreError::ManifestInvalid(msg) if msg.contains("leading or trailing whitespace")
+    ));
+}

@@ -280,6 +280,13 @@ impl AppManifest {
                         path.display()
                     )));
                 }
+                if domain != domain.trim() {
+                    return Err(CoreError::ManifestInvalid(format!(
+                        "{}: capabilities.http.domains contains domain with leading or trailing whitespace: {:?}",
+                        path.display(),
+                        domain
+                    )));
+                }
             }
         }
 
