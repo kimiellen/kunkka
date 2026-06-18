@@ -79,9 +79,16 @@ pub struct SqliteCloseParams {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SqliteResponse {
-    Opened { path: String },
-    Queried { columns: Vec<String>, rows: Vec<Vec<Option<Vec<u8>>>> },
-    Executed { rows_affected: u64 },
+    Opened {
+        path: String,
+    },
+    Queried {
+        columns: Vec<String>,
+        rows: Vec<Vec<Option<Vec<u8>>>>,
+    },
+    Executed {
+        rows_affected: u64,
+    },
     Closed,
 }
 
@@ -99,10 +106,7 @@ fn decode_param_values(raw_params: &[Vec<u8>]) -> Result<Vec<SqliteValue>, Capab
 }
 
 /// Encode a single SQLite column value into postcard bytes.
-fn encode_cell_value(
-    raw_value: &sqlx::sqlite::SqliteRow,
-    col_idx: usize,
-) -> Option<Vec<u8>> {
+fn encode_cell_value(raw_value: &sqlx::sqlite::SqliteRow, col_idx: usize) -> Option<Vec<u8>> {
     // Try to get the value as different types based on the column type info
     let col = &raw_value.columns()[col_idx];
     let type_name = col.type_info().name();
@@ -288,10 +292,11 @@ pub async fn handle_sqlite_request(
 ) -> Result<Vec<u8>, CapabilityError> {
     match method {
         "open" => {
-            let p: SqliteOpenParams = postcard::from_bytes(params).map_err(|e| CapabilityError {
-                code: "invalid_params".to_string(),
-                message: format!("invalid params: {e}"),
-            })?;
+            let p: SqliteOpenParams =
+                postcard::from_bytes(params).map_err(|e| CapabilityError {
+                    code: "invalid_params".to_string(),
+                    message: format!("invalid params: {e}"),
+                })?;
 
             let db_name = p.path.as_deref().unwrap_or("app.db");
             let db_path = app_db_path(data_dir, manifest.app_id.as_str(), db_name);
@@ -318,10 +323,11 @@ pub async fn handle_sqlite_request(
             })
         }
         "query" => {
-            let p: SqliteQueryParams = postcard::from_bytes(params).map_err(|e| CapabilityError {
-                code: "invalid_params".to_string(),
-                message: format!("invalid params: {e}"),
-            })?;
+            let p: SqliteQueryParams =
+                postcard::from_bytes(params).map_err(|e| CapabilityError {
+                    code: "invalid_params".to_string(),
+                    message: format!("invalid params: {e}"),
+                })?;
 
             let pool = connection_store
                 .get(manifest.app_id.as_str())
@@ -484,7 +490,9 @@ mod tests {
         assert_eq!(values.len(), 5);
         assert!(matches!(&values[0], SqliteValue::Integer(42)));
         assert!(matches!(&values[1], SqliteValue::Text(s) if s == "hello"));
-        assert!(matches!(&values[2], SqliteValue::Real(f) if (*f - std::f64::consts::PI).abs() < f64::EPSILON));
+        assert!(
+            matches!(&values[2], SqliteValue::Real(f) if (*f - std::f64::consts::PI).abs() < f64::EPSILON)
+        );
         assert!(matches!(&values[3], SqliteValue::Null));
         assert!(matches!(&values[4], SqliteValue::Blob(b) if b == &[1, 2, 3]));
     }

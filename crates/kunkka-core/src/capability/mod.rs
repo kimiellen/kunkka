@@ -71,9 +71,14 @@ pub async fn handle_capability_request(
     sqlite_connections: Option<&mut sqlite::SqliteConnectionStore>,
     data_dir: &Path,
 ) -> CapabilityResponse {
-    let result =
-        handle_capability_inner(app_registry, approvals, &request, sqlite_connections, data_dir)
-            .await;
+    let result = handle_capability_inner(
+        app_registry,
+        approvals,
+        &request,
+        sqlite_connections,
+        data_dir,
+    )
+    .await;
     CapabilityResponse { result }
 }
 
