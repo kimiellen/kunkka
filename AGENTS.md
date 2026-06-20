@@ -54,3 +54,34 @@
 - 集成测试里有一个反复出现的 `test_paths()` 辅助函数，构造 `tempdir` + `KunkkaPaths`；新测试应复用同一模式，不要硬编码系统路径。
 - `kunkka-cli` 和 `kunkka-native-host` 的 dev-dependencies 依赖 `kunkka-core` 和 `kunkka-worker-sdk`，用于在测试里构造完整 runtime 场景。
 - 新增 migration 放在 `crates/kunkka-core/migrations/`，文件名按序号递增（`0001_*`、`0002_*` …），用 `sqlx::migrate!()` 嵌入；不需要 `SQLX_OFFLINE` 或 `.sqlx/` 目录。
+
+## SDK 文档
+
+上层应用开发的 SDK 文档位于 `docs/SDK/`：
+
+- `docs/SDK/worker.md` — Worker 后端开发指南
+- `docs/SDK/worker-llm-usage.md` — Worker 侧 LLM Capability 使用指南
+- `docs/SDK/browser-extension.md` — Browser Extension 开发指南
+- `docs/SDK/frontend-theme.md` — Frontend 主题系统集成指南
+- `docs/SDK/ipc.md` — IPC 协议规范
+- `docs/SDK/permissions.md` — 权限系统说明
+- `docs/SDK/storage.md` — 存储路径规范
+
+### 能力层文档
+
+- `docs/SDK/capability-fs.md` — 文件系统能力
+- `docs/SDK/capability-http.md` — HTTP 能力
+- `docs/SDK/capability-sqlite.md` — SQLite 能力
+- `docs/SDK/capability-shell.md` — Shell 能力
+- `docs/SDK/capability-llm.md` — LLM 能力
+
+### SDK 文档铁律
+
+每次开发任务完成后，必须评估是否需要更新或新建 SDK 文档，确保文档内容始终与实现保持同步。具体检查点：
+
+1. 新增或修改了 capability → 更新或创建对应的 `docs/SDK/capability-*.md`
+2. 新增或修改了协议消息 → 更新 `docs/SDK/ipc.md`
+3. 新增或修改了权限逻辑 → 更新 `docs/SDK/permissions.md`
+4. 新增或修改了 worker 相关逻辑 → 更新 `docs/SDK/worker.md`
+5. 新增或修改了存储路径 → 更新 `docs/SDK/storage.md`
+6. 新增了上层应用开发相关的功能 → 创建对应的 SDK 文档

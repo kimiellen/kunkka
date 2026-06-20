@@ -50,6 +50,34 @@ pub struct CoreRejectApprovalRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreApprovalDecisionResponse;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeFlavor {
+    Latte,
+    Macchiato,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreGetThemeRequest;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreGetThemeResponse {
+    pub flavor: ThemeFlavor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreSetThemeRequest {
+    pub flavor: ThemeFlavor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreSetThemeResponse;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeChangedEvent {
+    pub flavor: ThemeFlavor,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CoreControlMessage {
     Ping(CorePingRequest),
@@ -61,6 +89,11 @@ pub enum CoreControlMessage {
     ApprovePendingApproval(CoreApproveApprovalRequest),
     RejectPendingApproval(CoreRejectApprovalRequest),
     ApprovalDecisionResult(CoreApprovalDecisionResponse),
+    GetTheme(CoreGetThemeRequest),
+    GetThemeResult(CoreGetThemeResponse),
+    SetTheme(CoreSetThemeRequest),
+    SetThemeResult(CoreSetThemeResponse),
+    ThemeChanged(ThemeChangedEvent),
 }
 
 pub fn encode_control_message(message: &CoreControlMessage) -> Result<Payload> {

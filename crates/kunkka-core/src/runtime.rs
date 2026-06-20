@@ -2,18 +2,21 @@ use crate::app_manifest::AppRegistry;
 use crate::approval::ApprovalStore;
 use crate::capability::{
     decode_capability_request, encode_capability_response, handle_capability_request,
-    sqlite::SqliteConnectionStore, CAPABILITY_SCHEMA,
+    llm::LlmState, sqlite::SqliteConnectionStore, CAPABILITY_SCHEMA,
 };
 use crate::database::CoreDatabase;
 use crate::ipc_server::CoreIpcServer;
+use crate::theme::ThemeManager;
 use crate::worker_dispatch::{DispatchResult, WorkerManager};
 use crate::worker_registry::WorkerRegistry;
 use crate::xdg::KunkkaPaths;
 use crate::{CoreError, Result};
-use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload};
+use futures_util::StreamExt;
+use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload, StreamId};
 use kunkka_protocol::core_control::{
     decode_control_message, encode_control_message, CoreApprovalDecisionResponse,
-    CoreControlMessage, CoreListApprovalsResponse, CorePingResponse, CoreStatusResponse,
+    CoreControlMessage, CoreGetThemeResponse, CoreListApprovalsResponse, CorePingResponse,
+    CoreSetThemeResponse, CoreStatusResponse, ThemeFlavor as ProtocolThemeFlavor,
     CORE_CONTROL_SCHEMA,
 };
 use kunkka_protocol::frontend_dispatch::{
@@ -33,6 +36,8 @@ pub struct CoreRuntime {
     _database: CoreDatabase,
     sqlite_connections: SqliteConnectionStore,
     data_dir: std::path::PathBuf,
+    llm_state: LlmState,
+    theme_manager: ThemeManager,
 }
 
 impl CoreRuntime {
@@ -41,6 +46,15 @@ impl CoreRuntime {
         let database = CoreDatabase::connect(paths).await?;
         let server = CoreIpcServer::bind(paths).await?;
         let app_registry = AppRegistry::load(paths)?;
+
+        let llm_state = LlmState::new(paths);
+        llm_state
+            .initialize()
+            .await
+            .map_err(|e| CoreError::Config(format!("Failed to initialize LLM state: {:?}", e)))?;
+
+        let theme_manager = ThemeManager::load_from_dir(&paths.config_dir)
+            .map_err(|e| CoreError::Config(format!("Failed to load theme config: {}", e)))?;
 
         Ok(Self {
             server,
@@ -52,6 +66,8 @@ impl CoreRuntime {
             _database: database,
             sqlite_connections: SqliteConnectionStore::new(),
             data_dir: paths.data_dir.clone(),
+            llm_state,
+            theme_manager,
         })
     }
 
@@ -65,6 +81,14 @@ impl CoreRuntime {
 
     pub fn database(&self) -> &CoreDatabase {
         &self._database
+    }
+
+    pub fn theme_manager(&self) -> &ThemeManager {
+        &self.theme_manager
+    }
+
+    pub fn theme_manager_mut(&mut self) -> &mut ThemeManager {
+        &mut self.theme_manager
     }
 
     pub fn reap_idle_workers(&mut self) {
@@ -95,6 +119,8 @@ impl CoreRuntime {
             &self._database,
             &mut self.sqlite_connections,
             &self.data_dir,
+            &self.llm_state,
+            &self.theme_manager,
             connection,
         )
         .await
@@ -108,7 +134,7 @@ impl CoreRuntime {
             tokio::select! {
                 accepted = self.server.accept_one() => {
                     let connection = accepted?;
-                    run_connection(&self.server, &mut self.worker_manager, &mut self.approvals, &self._database, &mut self.sqlite_connections, &self.data_dir, connection).await?;
+                    run_connection(&self.server, &mut self.worker_manager, &mut self.approvals, &self._database, &mut self.sqlite_connections, &self.data_dir, &self.llm_state, &self.theme_manager, connection).await?;
                 }
                 _ = reap_interval.tick() => {
                     self.worker_manager.reap_idle_workers();
@@ -118,6 +144,7 @@ impl CoreRuntime {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_connection(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
@@ -125,6 +152,8 @@ async fn run_connection(
     database: &CoreDatabase,
     sqlite_connections: &mut SqliteConnectionStore,
     data_dir: &std::path::Path,
+    llm_state: &LlmState,
+    theme_manager: &ThemeManager,
     mut connection: IpcConnection,
 ) -> Result<()> {
     let Some(first_frame) = connection.recv_frame().await? else {
@@ -143,6 +172,7 @@ async fn run_connection(
                 worker_manager,
                 approvals,
                 database,
+                theme_manager,
                 connection,
                 first_frame,
             )
@@ -154,6 +184,7 @@ async fn run_connection(
                 approvals,
                 sqlite_connections,
                 data_dir,
+                llm_state,
                 connection,
                 first_frame,
             )
@@ -173,11 +204,19 @@ async fn run_frontend_connection(
     worker_manager: &mut WorkerManager,
     approvals: &mut ApprovalStore,
     database: &CoreDatabase,
+    theme_manager: &ThemeManager,
     mut connection: IpcConnection,
     first_frame: Frame,
 ) -> Result<()> {
-    let response =
-        handle_frontend_frame(server, worker_manager, approvals, database, first_frame).await?;
+    let response = handle_frontend_frame(
+        server,
+        worker_manager,
+        approvals,
+        database,
+        theme_manager,
+        first_frame,
+    )
+    .await?;
     connection.send_frame(&response).await?;
     let mut reap_interval = interval(IDLE_REAP_INTERVAL);
     reap_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -188,7 +227,7 @@ async fn run_frontend_connection(
                 let Some(frame) = frame? else {
                     return Ok(());
                 };
-                let response = handle_frontend_frame(server, worker_manager, approvals, database, frame).await?;
+                let response = handle_frontend_frame(server, worker_manager, approvals, database, theme_manager, frame).await?;
                 connection.send_frame(&response).await?;
             }
             _ = reap_interval.tick() => {
@@ -203,6 +242,7 @@ async fn handle_capability_connection(
     approvals: &mut ApprovalStore,
     sqlite_connections: &mut SqliteConnectionStore,
     data_dir: &std::path::Path,
+    llm_state: &LlmState,
     mut connection: IpcConnection,
     frame: Frame,
 ) -> Result<()> {
@@ -221,12 +261,31 @@ async fn handle_capability_connection(
     };
 
     let request = decode_capability_request(&payload)?;
+
+    if request.capability == "llm"
+        && crate::capability::llm::is_streaming_chat(&request.method, &request.params).map_err(
+            |err| CoreError::InvalidCoreFrame(format!("llm stream decode: {}", err.message)),
+        )?
+    {
+        return handle_llm_stream_connection(
+            llm_state,
+            request,
+            request_id,
+            session_id,
+            source,
+            target,
+            &mut connection,
+        )
+        .await;
+    }
+
     let response = handle_capability_request(
         worker_manager.app_registry(),
         approvals,
         request,
         Some(sqlite_connections),
         data_dir,
+        Some(llm_state),
     )
     .await;
     let response_payload = encode_capability_response(&response)?;
@@ -244,17 +303,143 @@ async fn handle_capability_connection(
     Ok(())
 }
 
+async fn handle_llm_stream_connection(
+    llm_state: &LlmState,
+    request: crate::capability::CapabilityRequest,
+    request_id: kunkka_ipc::RequestId,
+    session_id: kunkka_ipc::SessionId,
+    source: EndpointId,
+    target: EndpointId,
+    connection: &mut IpcConnection,
+) -> Result<()> {
+    let chat_params =
+        crate::capability::llm::decode_chat_params(&request.params).map_err(|err| {
+            CoreError::InvalidCoreFrame(format!("llm stream decode: {}", err.message))
+        })?;
+
+    let mut stream = match crate::capability::llm::create_chat_stream(chat_params, llm_state).await
+    {
+        Ok(stream) => stream,
+        Err(err) => {
+            let response = crate::capability::CapabilityResponse { result: Err(err) };
+            let payload = encode_capability_response(&response)?;
+            connection
+                .send_frame(&Frame::Response {
+                    request_id,
+                    session_id,
+                    source: target_or_core(target),
+                    target: source,
+                    payload,
+                    metadata: FrameMetadata::new(),
+                })
+                .await?;
+            return Ok(());
+        }
+    };
+
+    let stream_id = StreamId(request_id.0);
+
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(chunk) => {
+                let usage = chunk.usage.map(|u| crate::capability::llm::LlmUsage {
+                    prompt_tokens: u.prompt_tokens,
+                    completion_tokens: u.completion_tokens,
+                    total_tokens: u.total_tokens,
+                });
+
+                for choice in chunk.choices {
+                    let event = crate::capability::llm::LlmChatStreamChunk {
+                        content_delta: choice.delta.content.unwrap_or_default(),
+                        finish_reason: choice.finish_reason.as_ref().map(|r| format!("{:?}", r)),
+                        usage: usage.clone(),
+                    };
+
+                    if event.content_delta.is_empty()
+                        && event.finish_reason.is_none()
+                        && event.usage.is_none()
+                    {
+                        continue;
+                    }
+
+                    let payload = Payload {
+                        bytes: postcard::to_stdvec(&event).map_err(|e| {
+                            CoreError::InvalidCoreFrame(format!("llm stream encode: {e}"))
+                        })?,
+                        content_type: Some(crate::capability::CAPABILITY_CONTENT_TYPE.to_string()),
+                        schema: Some(crate::capability::CAPABILITY_SCHEMA.to_string()),
+                        metadata: FrameMetadata::new(),
+                    };
+
+                    connection
+                        .send_frame(&Frame::Stream {
+                            stream_id,
+                            request_id: Some(request_id),
+                            session_id,
+                            source: target_or_core(target.clone()),
+                            target: source.clone(),
+                            payload,
+                            end: false,
+                            metadata: FrameMetadata::new(),
+                        })
+                        .await?;
+                }
+            }
+            Err(err) => {
+                connection
+                    .send_frame(&Frame::Error {
+                        request_id: Some(request_id),
+                        stream_id: Some(stream_id),
+                        session_id: Some(session_id),
+                        source: target_or_core(target.clone()),
+                        target: source.clone(),
+                        code: "llm_stream_error".to_string(),
+                        message: err.to_string(),
+                        metadata: FrameMetadata::new(),
+                    })
+                    .await?;
+                return Ok(());
+            }
+        }
+    }
+
+    connection
+        .send_frame(&Frame::Stream {
+            stream_id,
+            request_id: Some(request_id),
+            session_id,
+            source: target_or_core(target),
+            target: source,
+            payload: Payload {
+                bytes: Vec::new(),
+                content_type: Some(crate::capability::CAPABILITY_CONTENT_TYPE.to_string()),
+                schema: Some(crate::capability::CAPABILITY_SCHEMA.to_string()),
+                metadata: FrameMetadata::new(),
+            },
+            end: true,
+            metadata: FrameMetadata::new(),
+        })
+        .await?;
+
+    Ok(())
+}
+
 async fn handle_frontend_frame(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
     approvals: &mut ApprovalStore,
     database: &CoreDatabase,
+    theme_manager: &ThemeManager,
     frame: Frame,
 ) -> Result<Frame> {
     match frame_schema(&frame) {
-        Some(CORE_CONTROL_SCHEMA) => {
-            handle_control_frame(server, worker_manager.registry(), approvals, frame)
-        }
+        Some(CORE_CONTROL_SCHEMA) => handle_control_frame(
+            server,
+            worker_manager.registry(),
+            approvals,
+            theme_manager,
+            frame,
+        ),
         Some(FRONTEND_DISPATCH_SCHEMA) => {
             handle_frontend_dispatch_frame(server, worker_manager, database, frame).await
         }
@@ -415,6 +600,7 @@ fn handle_control_frame(
     server: &CoreIpcServer,
     registry: &WorkerRegistry,
     approvals: &mut ApprovalStore,
+    theme_manager: &ThemeManager,
     frame: Frame,
 ) -> Result<Frame> {
     let Frame::Request {
@@ -450,6 +636,18 @@ fn handle_control_frame(
         CoreControlMessage::RejectPendingApproval(request) => {
             approvals.reject(&request.approval_id);
             CoreControlMessage::ApprovalDecisionResult(CoreApprovalDecisionResponse)
+        }
+        CoreControlMessage::GetTheme(_) => {
+            let flavor = match theme_manager.active_flavor() {
+                crate::theme::ThemeFlavor::Latte => ProtocolThemeFlavor::Latte,
+                crate::theme::ThemeFlavor::Macchiato => ProtocolThemeFlavor::Macchiato,
+            };
+            CoreControlMessage::GetThemeResult(CoreGetThemeResponse { flavor })
+        }
+        CoreControlMessage::SetTheme(_request) => {
+            // Note: Actual theme switching is handled by the mutable runtime method
+            // This is just a response placeholder
+            CoreControlMessage::SetThemeResult(CoreSetThemeResponse)
         }
         _ => {
             return Err(CoreError::InvalidCoreFrame(
