@@ -348,3 +348,82 @@ async fn dispatch_decode_failure_removes_active_worker_and_returns_unexpected_re
         .unwrap()
         .unwrap();
 }
+
+#[tokio::test]
+async fn dispatch_to_different_app_ids_routes_to_correct_workers() {
+    let (_root, socket_path) = socket_path();
+    let listener = IpcListener::bind(&socket_path).await.unwrap();
+
+    let notes_task = tokio::spawn({
+        let socket_path = socket_path.clone();
+        async move {
+            let connection = IpcConnection::connect(&socket_path).await.unwrap();
+            let mut worker = WorkerClient::from_connection(
+                connection,
+                WorkerId::new("notes-worker"),
+                kunkka_ipc::SessionId(1),
+            );
+            let ctx = timeout(Duration::from_secs(2), worker.recv_dispatch())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(ctx.request.app_id.as_str(), "notes");
+            worker
+                .respond_dispatch(ctx, DispatchWorkerResponse::Ok(payload(b"notes-result")))
+                .await
+                .unwrap();
+        }
+    });
+
+    let notes_conn = listener.accept().await.unwrap();
+    let mut manager = WorkerManager::new_empty();
+    manager.register_active_for_test(
+        registration_for("notes-worker", "notes"),
+        notes_conn,
+        300_000,
+    );
+
+    let todo_task = tokio::spawn({
+        let socket_path = socket_path.clone();
+        async move {
+            let connection = IpcConnection::connect(&socket_path).await.unwrap();
+            let mut worker = WorkerClient::from_connection(
+                connection,
+                WorkerId::new("todo-worker"),
+                kunkka_ipc::SessionId(1),
+            );
+            let ctx = timeout(Duration::from_secs(2), worker.recv_dispatch())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(ctx.request.app_id.as_str(), "todo");
+            worker
+                .respond_dispatch(ctx, DispatchWorkerResponse::Ok(payload(b"todo-result")))
+                .await
+                .unwrap();
+        }
+    });
+
+    let todo_conn = listener.accept().await.unwrap();
+    manager.register_active_for_test(registration_for("todo-worker", "todo"), todo_conn, 300_000);
+
+    assert!(manager.is_active(&AppId::new("notes")));
+    assert!(manager.is_active(&AppId::new("todo")));
+
+    let notes_result =
+        dispatch_with_timeout(&mut manager, AppId::new("notes"), "search", payload(b"q")).await;
+    let DispatchResult::Ok(p) = notes_result.unwrap() else {
+        panic!("expected notes ok");
+    };
+    assert_eq!(p.bytes, b"notes-result");
+
+    let todo_result =
+        dispatch_with_timeout(&mut manager, AppId::new("todo"), "list", payload(b"")).await;
+    let DispatchResult::Ok(p) = todo_result.unwrap() else {
+        panic!("expected todo ok");
+    };
+    assert_eq!(p.bytes, b"todo-result");
+
+    notes_task.await.unwrap();
+    todo_task.await.unwrap();
+}

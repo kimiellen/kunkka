@@ -451,11 +451,7 @@ async fn shell_timeout_returns_timeout_error() {
         }
     });
 
-    let result = tokio::time::timeout(
-        Duration::from_secs(35),
-        runtime.run_once(),
-    )
-    .await;
+    let result = tokio::time::timeout(Duration::from_secs(35), runtime.run_once()).await;
 
     let response_frame = tokio::time::timeout(Duration::from_secs(5), client_task)
         .await

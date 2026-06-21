@@ -3,11 +3,18 @@ use kunkka_core::xdg::KunkkaPaths;
 use kunkka_core::CoreError;
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload, RequestId, SessionId};
 use kunkka_protocol::core_control::{
-    decode_control_message, encode_control_message, CoreControlMessage, CoreGetThemeRequest,
-    CorePingRequest, CorePingResponse, CoreSetThemeRequest, CoreStatusRequest, ThemeChangedEvent,
-    ThemeFlavor,
+    decode_control_message, encode_control_message, CoreApproveApprovalRequest, CoreControlMessage,
+    CoreGetThemeRequest, CoreListApprovalsRequest, CoreListApprovalsResponse, CorePingRequest,
+    CorePingResponse, CoreRejectApprovalRequest, CoreSetThemeRequest, CoreStatusRequest,
+    ThemeChangedEvent, ThemeFlavor,
 };
-use kunkka_worker_sdk::{AppId, RegisterWorkerRequest, WorkerCapability, WorkerClient, WorkerId};
+use kunkka_protocol::frontend_dispatch::{
+    decode_frontend_dispatch_message, encode_frontend_dispatch_message, FrontendDispatchMessage,
+    FrontendDispatchRequest, FrontendDispatchResponse,
+};
+use kunkka_worker_sdk::{
+    AppId, DispatchWorkerResponse, RegisterWorkerRequest, WorkerCapability, WorkerClient, WorkerId,
+};
 use std::path::PathBuf;
 use tempfile::{tempdir, TempDir};
 
@@ -504,4 +511,274 @@ async fn set_theme_then_get_theme_reflects_change() {
     assert!(json.contains("\"latte\""));
 
     runtime_task.abort();
+}
+
+#[tokio::test]
+async fn list_pending_approvals_returns_empty_when_none() {
+    let (_root, paths) = test_paths();
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let client_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+            let payload = encode_control_message(&CoreControlMessage::ListPendingApprovals(
+                CoreListApprovalsRequest,
+            ))
+            .unwrap();
+            let frame = Frame::Request {
+                request_id: RequestId(401),
+                session_id: SessionId(1),
+                source: EndpointId::new("cli"),
+                target: EndpointId::new("core"),
+                payload,
+                metadata: FrameMetadata::new(),
+            };
+            connection.send_frame(&frame).await.unwrap();
+            connection.recv_frame().await.unwrap().unwrap()
+        }
+    });
+
+    runtime.run_once().await.unwrap();
+    let response_frame = client_task.await.unwrap();
+
+    let Frame::Response { payload, .. } = response_frame else {
+        panic!("expected response frame");
+    };
+    let decoded = decode_control_message(&payload).unwrap();
+    let CoreControlMessage::PendingApprovalsResult(CoreListApprovalsResponse { approvals }) =
+        decoded
+    else {
+        panic!("expected pending approvals result");
+    };
+    assert!(approvals.is_empty());
+}
+
+#[tokio::test]
+async fn approve_nonexistent_approval_id_is_noop() {
+    let (_root, paths) = test_paths();
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let client_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+            let payload = encode_control_message(&CoreControlMessage::ApprovePendingApproval(
+                CoreApproveApprovalRequest {
+                    approval_id: "nonexistent-id".to_string(),
+                },
+            ))
+            .unwrap();
+            let frame = Frame::Request {
+                request_id: RequestId(402),
+                session_id: SessionId(1),
+                source: EndpointId::new("cli"),
+                target: EndpointId::new("core"),
+                payload,
+                metadata: FrameMetadata::new(),
+            };
+            connection.send_frame(&frame).await.unwrap();
+            connection.recv_frame().await.unwrap().unwrap()
+        }
+    });
+
+    runtime.run_once().await.unwrap();
+    let response_frame = client_task.await.unwrap();
+
+    let Frame::Response { payload, .. } = response_frame else {
+        panic!("expected response frame");
+    };
+    assert_eq!(
+        decode_control_message(&payload).unwrap(),
+        CoreControlMessage::ApprovalDecisionResult(
+            kunkka_protocol::core_control::CoreApprovalDecisionResponse
+        )
+    );
+}
+
+#[tokio::test]
+async fn reject_nonexistent_approval_id_is_noop() {
+    let (_root, paths) = test_paths();
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let client_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+            let payload = encode_control_message(&CoreControlMessage::RejectPendingApproval(
+                CoreRejectApprovalRequest {
+                    approval_id: "nonexistent-id".to_string(),
+                },
+            ))
+            .unwrap();
+            let frame = Frame::Request {
+                request_id: RequestId(403),
+                session_id: SessionId(1),
+                source: EndpointId::new("cli"),
+                target: EndpointId::new("core"),
+                payload,
+                metadata: FrameMetadata::new(),
+            };
+            connection.send_frame(&frame).await.unwrap();
+            connection.recv_frame().await.unwrap().unwrap()
+        }
+    });
+
+    runtime.run_once().await.unwrap();
+    let response_frame = client_task.await.unwrap();
+
+    let Frame::Response { payload, .. } = response_frame else {
+        panic!("expected response frame");
+    };
+    assert_eq!(
+        decode_control_message(&payload).unwrap(),
+        CoreControlMessage::ApprovalDecisionResult(
+            kunkka_protocol::core_control::CoreApprovalDecisionResponse
+        )
+    );
+}
+
+#[tokio::test]
+async fn frontend_connection_handles_multiple_dispatch_requests() {
+    let (_root, paths) = test_paths();
+    std::fs::create_dir_all(paths.config_dir.join("apps")).unwrap();
+    std::fs::write(
+        paths.config_dir.join("apps/notes.json"),
+        r#"{
+            "app_id": "notes",
+            "worker": { "program": "/usr/bin/notes-worker", "args": [] },
+            "permissions": { "frontend_dispatch": { "allowed_methods": ["search"] } }
+        }"#,
+    )
+    .unwrap();
+
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let register_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+        async move {
+            let mut client = WorkerClient::connect(&socket_path, WorkerId::new("notes"))
+                .await
+                .unwrap();
+            let reg = client
+                .register(RegisterWorkerRequest {
+                    worker_id: WorkerId::new("notes"),
+                    app_id: AppId::new("notes"),
+                    capabilities: vec![],
+                })
+                .await
+                .unwrap();
+            assert!(reg.accepted);
+
+            let ctx = client.recv_dispatch().await.unwrap();
+            client
+                .respond_dispatch(
+                    ctx,
+                    DispatchWorkerResponse::Ok(Payload {
+                        bytes: b"result1".to_vec(),
+                        content_type: Some("application/json".to_string()),
+                        schema: None,
+                        metadata: FrameMetadata::new(),
+                    }),
+                )
+                .await
+                .unwrap();
+
+            let ctx2 = client.recv_dispatch().await.unwrap();
+            client
+                .respond_dispatch(
+                    ctx2,
+                    DispatchWorkerResponse::Ok(Payload {
+                        bytes: b"result2".to_vec(),
+                        content_type: Some("application/json".to_string()),
+                        schema: None,
+                        metadata: FrameMetadata::new(),
+                    }),
+                )
+                .await
+                .unwrap();
+        }
+    });
+
+    runtime.run_once().await.unwrap();
+
+    let client_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+
+            let make_dispatch = |req_id: u128, method: &str| {
+                let payload = encode_frontend_dispatch_message(&FrontendDispatchMessage::Dispatch(
+                    FrontendDispatchRequest {
+                        app_id: "notes".to_string(),
+                        method: method.to_string(),
+                        payload: Payload {
+                            bytes: b"{}".to_vec(),
+                            content_type: Some("application/json".to_string()),
+                            schema: None,
+                            metadata: FrameMetadata::new(),
+                        },
+                    },
+                ))
+                .unwrap();
+                Frame::Request {
+                    request_id: RequestId(req_id),
+                    session_id: SessionId(1),
+                    source: EndpointId::new("cli"),
+                    target: EndpointId::new("core"),
+                    payload,
+                    metadata: FrameMetadata::new(),
+                }
+            };
+
+            connection
+                .send_frame(&make_dispatch(501, "search"))
+                .await
+                .unwrap();
+            let resp1 = connection.recv_frame().await.unwrap().unwrap();
+
+            connection
+                .send_frame(&make_dispatch(502, "search"))
+                .await
+                .unwrap();
+            let resp2 = connection.recv_frame().await.unwrap().unwrap();
+
+            (resp1, resp2)
+        }
+    });
+
+    runtime.run_once().await.unwrap();
+
+    let (resp1, resp2) = client_task.await.unwrap();
+    let _ = register_task.await;
+
+    let Frame::Response {
+        request_id: rid1,
+        payload: p1,
+        ..
+    } = resp1
+    else {
+        panic!("expected response 1");
+    };
+    assert_eq!(rid1, RequestId(501));
+    let msg1 = decode_frontend_dispatch_message(&p1).unwrap();
+    assert!(matches!(
+        msg1,
+        FrontendDispatchMessage::DispatchResult(FrontendDispatchResponse::Ok(_))
+    ));
+
+    let Frame::Response {
+        request_id: rid2,
+        payload: p2,
+        ..
+    } = resp2
+    else {
+        panic!("expected response 2");
+    };
+    assert_eq!(rid2, RequestId(502));
+    let msg2 = decode_frontend_dispatch_message(&p2).unwrap();
+    assert!(matches!(
+        msg2,
+        FrontendDispatchMessage::DispatchResult(FrontendDispatchResponse::Ok(_))
+    ));
 }
