@@ -14,6 +14,7 @@ use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tracing::{debug, info};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DispatchResult {
@@ -90,6 +91,7 @@ impl WorkerManager {
 
         for app_id in expired {
             if let Some(mut worker) = self.active_workers.remove(&app_id) {
+                debug!(app_id = %app_id.as_str(), "reaping idle worker");
                 worker.terminate();
             }
             self.registry.remove_by_app_id(&app_id);
@@ -113,10 +115,12 @@ impl WorkerManager {
         payload: Payload,
     ) -> Result<DispatchResult> {
         if !self.is_active(&app_id) {
+            info!(app_id = %app_id.as_str(), "starting worker");
             self.start_and_wait_for_registration(server, &app_id)
                 .await?;
         }
 
+        debug!(app_id = %app_id.as_str(), method = %method, "dispatching to worker");
         self.dispatch(app_id, method, payload).await
     }
 

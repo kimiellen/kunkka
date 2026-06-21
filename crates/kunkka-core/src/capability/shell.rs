@@ -5,6 +5,7 @@ use crate::capability::CapabilityError;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::process::Command;
+use tracing::{debug, warn};
 
 const SHELL_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -248,24 +249,31 @@ fn map_approval_consume_error(error: ApprovalConsumeError) -> CapabilityError {
 }
 
 async fn run_command(command: &str) -> Result<ShellRunOutcome, CapabilityError> {
+    debug!(command = %command, "executing shell command");
     let output = tokio::time::timeout(
         SHELL_TIMEOUT,
         Command::new("/bin/sh").arg("-c").arg(command).output(),
     )
     .await
-    .map_err(|_| CapabilityError {
-        code: "timeout".to_string(),
-        message: format!("shell command timed out after {}s", SHELL_TIMEOUT.as_secs()),
+    .map_err(|_| {
+        warn!(command = %command, timeout_secs = SHELL_TIMEOUT.as_secs(), "shell command timed out");
+        CapabilityError {
+            code: "timeout".to_string(),
+            message: format!("shell command timed out after {}s", SHELL_TIMEOUT.as_secs()),
+        }
     })?
     .map_err(|e| CapabilityError {
         code: "io_error".to_string(),
         message: e.to_string(),
     })?;
 
+    let exit_code = output.status.code().unwrap_or(-1);
+    debug!(command = %command, exit_code, "shell command completed");
+
     Ok(ShellRunOutcome::Completed(ShellRunResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        exit_code: output.status.code().unwrap_or(-1),
+        exit_code,
     }))
 }
 

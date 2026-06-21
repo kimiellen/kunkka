@@ -27,6 +27,7 @@ use kunkka_worker_sdk::{AppId, WORKER_PROTOCOL_SCHEMA};
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::time::{interval, MissedTickBehavior};
+use tracing::{debug, info, warn};
 
 const IDLE_REAP_INTERVAL: Duration = Duration::from_millis(100);
 const THEME_BROADCAST_CAPACITY: usize = 16;
@@ -46,6 +47,7 @@ pub struct CoreRuntime {
 impl CoreRuntime {
     pub async fn prepare(paths: &KunkkaPaths) -> Result<Self> {
         paths.ensure_dirs()?;
+        info!("initializing core runtime");
         let database = CoreDatabase::connect(paths).await?;
         let server = CoreIpcServer::bind(paths).await?;
         let app_registry = AppRegistry::load(paths)?;
@@ -134,6 +136,7 @@ impl CoreRuntime {
     }
 
     pub async fn run(mut self) -> Result<()> {
+        info!("core runtime loop started");
         let mut reap_interval = interval(IDLE_REAP_INTERVAL);
         reap_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -170,6 +173,7 @@ async fn run_connection(
 
     match frame_schema(&first_frame) {
         Some(WORKER_PROTOCOL_SCHEMA) => {
+            debug!("routing to worker registration");
             worker_manager
                 .handle_registration_connection(first_frame, connection, None, 300_000)
                 .await
@@ -298,6 +302,13 @@ async fn handle_capability_connection(
     };
 
     let request = decode_capability_request(&payload)?;
+
+    debug!(
+        app_id = %request.app_id,
+        capability = %request.capability,
+        method = %request.method,
+        "capability request"
+    );
 
     if request.capability == "llm"
         && crate::capability::llm::is_streaming_chat(&request.method, &request.params).map_err(
@@ -541,6 +552,12 @@ async fn handle_frontend_dispatch_request(
     database: &CoreDatabase,
     request: FrontendDispatchRequest,
 ) -> Result<FrontendDispatchResponse> {
+    debug!(
+        app_id = %request.app_id,
+        method = %request.method,
+        "frontend dispatch request"
+    );
+
     if request.app_id.is_empty() {
         return Ok(platform_error(
             "invalid_request",
@@ -684,8 +701,10 @@ fn handle_control_frame(
         CoreControlMessage::SetTheme(request) => {
             let new_flavor = to_core_flavor(request.flavor);
             if let Err(e) = theme_manager.switch_flavor(new_flavor) {
+                warn!(error = %e, "failed to switch theme");
                 return Err(CoreError::Config(format!("Failed to switch theme: {e}")));
             }
+            info!(flavor = ?request.flavor, "theme switched");
             let _ = theme_broadcast.send(request.flavor);
             CoreControlMessage::SetThemeResult(CoreSetThemeResponse)
         }
