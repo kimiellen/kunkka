@@ -427,3 +427,44 @@ async fn expired_approval_is_not_returned_by_pending_approvals_query() {
         .iter()
         .all(|approval| approval.approval_id != approval_id));
 }
+
+#[tokio::test]
+async fn shell_timeout_returns_timeout_error() {
+    let (_root, paths) = test_paths();
+    write_manifest_with_shell(&paths, &["sleep"], &[]);
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let shell_frame = capability_frame(
+        1,
+        &ShellRunParams {
+            command: "sleep 60".to_string(),
+            approval_id: None,
+        },
+    );
+
+    let client_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+            connection.send_frame(&shell_frame).await.unwrap();
+            connection.recv_frame().await.unwrap().unwrap()
+        }
+    });
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(35),
+        runtime.run_once(),
+    )
+    .await;
+
+    let response_frame = tokio::time::timeout(Duration::from_secs(5), client_task)
+        .await
+        .expect("client task timed out")
+        .unwrap();
+
+    let err = decode_shell_result(response_frame).unwrap_err();
+    assert_eq!(err.code, "timeout");
+    assert!(err.message.contains("timed out"));
+
+    let _ = result;
+}

@@ -3,7 +3,10 @@ use crate::approval::{ApprovalConsumeError, ApprovalStore};
 use crate::capability::permissions::{decide_shell_policy, ShellPolicyDecision};
 use crate::capability::CapabilityError;
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::time::Duration;
+use tokio::process::Command;
+
+const SHELL_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShellRunParams {
@@ -87,11 +90,11 @@ pub async fn handle_shell_request(
                 &params.command,
             )
             .map_err(map_approval_consume_error)?;
-        return encode_outcome(run_command(&params.command)?);
+        return encode_outcome(run_command(&params.command).await?);
     }
 
     match decide_shell_policy(manifest, &commands) {
-        ShellPolicyDecision::Allow => encode_outcome(run_command(&params.command)?),
+        ShellPolicyDecision::Allow => encode_outcome(run_command(&params.command).await?),
         ShellPolicyDecision::Ask => {
             let approval_id = approvals.create(
                 manifest.app_id.as_str().to_string(),
@@ -244,15 +247,20 @@ fn map_approval_consume_error(error: ApprovalConsumeError) -> CapabilityError {
     }
 }
 
-fn run_command(command: &str) -> Result<ShellRunOutcome, CapabilityError> {
-    let output = Command::new("/bin/sh")
-        .arg("-c")
-        .arg(command)
-        .output()
-        .map_err(|e| CapabilityError {
-            code: "io_error".to_string(),
-            message: e.to_string(),
-        })?;
+async fn run_command(command: &str) -> Result<ShellRunOutcome, CapabilityError> {
+    let output = tokio::time::timeout(
+        SHELL_TIMEOUT,
+        Command::new("/bin/sh").arg("-c").arg(command).output(),
+    )
+    .await
+    .map_err(|_| CapabilityError {
+        code: "timeout".to_string(),
+        message: format!("shell command timed out after {}s", SHELL_TIMEOUT.as_secs()),
+    })?
+    .map_err(|e| CapabilityError {
+        code: "io_error".to_string(),
+        message: e.to_string(),
+    })?;
 
     Ok(ShellRunOutcome::Completed(ShellRunResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
