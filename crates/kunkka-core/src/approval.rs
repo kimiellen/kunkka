@@ -1,6 +1,7 @@
 use kunkka_protocol::core_control::PendingApproval;
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
+use tracing::debug;
 
 const APPROVAL_TTL: Duration = Duration::from_secs(60);
 
@@ -156,6 +157,20 @@ impl ApprovalStore {
                 ApprovalState::Rejected | ApprovalState::Expired
             )
         });
+    }
+
+    pub fn reap_expired(&mut self) {
+        let before = self.entries.len();
+        self.expire_pending_entries(Instant::now());
+        self.drop_terminal_entries();
+        let removed = before - self.entries.len();
+        if removed > 0 {
+            debug!(
+                removed,
+                remaining = self.entries.len(),
+                "reaped expired approvals"
+            );
+        }
     }
 }
 
@@ -479,5 +494,72 @@ mod tests {
             store.consume_approved(&id3, "notes", "shell", "cmd3"),
             Err(ApprovalConsumeError::Pending)
         );
+    }
+
+    #[test]
+    fn reap_expired_removes_stale_pending_entries() {
+        let mut store = ApprovalStore::new();
+        let id1 = store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd1".into(),
+            vec!["cmd1".into()],
+        );
+        let id2 = store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd2".into(),
+            vec!["cmd2".into()],
+        );
+
+        let entry = store.entries.get_mut(&id1).unwrap();
+        entry.created_at = Instant::now() - APPROVAL_TTL;
+
+        store.reap_expired();
+
+        assert!(!store.entries.contains_key(&id1));
+        assert!(store.entries.contains_key(&id2));
+        assert_eq!(store.entries.len(), 1);
+    }
+
+    #[test]
+    fn reap_expired_keeps_fresh_pending_entries() {
+        let mut store = ApprovalStore::new();
+        store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd1".into(),
+            vec!["cmd1".into()],
+        );
+        store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd2".into(),
+            vec!["cmd2".into()],
+        );
+
+        store.reap_expired();
+
+        assert_eq!(store.entries.len(), 2);
+        assert_eq!(store.list_pending().len(), 2);
+    }
+
+    #[test]
+    fn reap_expired_keeps_approved_entries_even_if_stale() {
+        let mut store = ApprovalStore::new();
+        let id = store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd1".into(),
+            vec!["cmd1".into()],
+        );
+
+        let entry = store.entries.get_mut(&id).unwrap();
+        entry.state = ApprovalState::Approved;
+        entry.created_at = Instant::now() - APPROVAL_TTL;
+
+        store.reap_expired();
+
+        assert!(store.entries.contains_key(&id));
     }
 }

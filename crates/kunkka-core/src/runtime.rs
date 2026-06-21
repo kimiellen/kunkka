@@ -30,6 +30,7 @@ use tokio::time::{interval, MissedTickBehavior};
 use tracing::{debug, info, warn};
 
 const IDLE_REAP_INTERVAL: Duration = Duration::from_millis(100);
+const APPROVAL_REAP_INTERVAL: Duration = Duration::from_secs(5);
 const THEME_BROADCAST_CAPACITY: usize = 16;
 
 pub struct CoreRuntime {
@@ -139,6 +140,8 @@ impl CoreRuntime {
         info!("core runtime loop started");
         let mut reap_interval = interval(IDLE_REAP_INTERVAL);
         reap_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let mut approval_reap_interval = interval(APPROVAL_REAP_INTERVAL);
+        approval_reap_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         loop {
             tokio::select! {
@@ -148,6 +151,9 @@ impl CoreRuntime {
                 }
                 _ = reap_interval.tick() => {
                     self.worker_manager.reap_idle_workers();
+                }
+                _ = approval_reap_interval.tick() => {
+                    self.approvals.reap_expired();
                 }
             }
         }
