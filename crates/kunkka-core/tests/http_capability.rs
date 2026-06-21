@@ -17,6 +17,7 @@ fn make_manifest(domains: &[&str]) -> AppManifest {
             http: Some(HttpCapabilityConfig {
                 domains: domains.iter().map(|s| s.to_string()).collect(),
             }),
+            llm: None,
         },
         idle_timeout_ms: 300_000,
         startup_timeout_ms: 10_000,

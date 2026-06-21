@@ -1,8 +1,12 @@
+use kunkka_core::app_manifest::{
+    AppManifest, AppPermissions, CapabilitiesConfig, LlmCapabilityConfig, WorkerCommand,
+};
 use kunkka_core::capability::llm::*;
 use kunkka_core::llm::config::ConfigLoader;
 use kunkka_core::llm::types::*;
 use kunkka_core::xdg::KunkkaPaths;
-use std::collections::HashMap;
+use kunkka_worker_sdk::AppId;
+use std::collections::{BTreeMap, HashMap};
 use tempfile::tempdir;
 
 fn test_paths() -> (tempfile::TempDir, KunkkaPaths) {
@@ -37,6 +41,29 @@ fn create_test_providers() -> HashMap<String, ProviderConfig> {
     providers
 }
 
+fn manifest_with_llm_roles(roles: Vec<&str>) -> AppManifest {
+    AppManifest {
+        app_id: AppId::new("test-app"),
+        worker: WorkerCommand {
+            program: "/bin/true".to_string(),
+            args: vec![],
+            env: BTreeMap::new(),
+            cwd: None,
+        },
+        permissions: AppPermissions::default(),
+        capabilities: CapabilitiesConfig {
+            fs: None,
+            shell: None,
+            http: None,
+            llm: Some(LlmCapabilityConfig {
+                roles: roles.into_iter().map(String::from).collect(),
+            }),
+        },
+        idle_timeout_ms: 300_000,
+        startup_timeout_ms: 10_000,
+    }
+}
+
 #[tokio::test]
 async fn test_llm_state_initialize() {
     let (_root, paths) = test_paths();
@@ -64,7 +91,8 @@ async fn test_handle_list_providers() {
     state.initialize().await.unwrap();
 
     let params = postcard::to_stdvec(&()).unwrap();
-    let response = handle_llm_request("list_providers", &params, &state)
+    let manifest = manifest_with_llm_roles(vec!["thinker"]);
+    let response = handle_llm_request(&manifest, "list_providers", &params, &state)
         .await
         .unwrap();
     let llm_response: LlmResponse = postcard::from_bytes(&response).unwrap();
@@ -93,7 +121,8 @@ async fn test_handle_list_models() {
     state.initialize().await.unwrap();
 
     let params = postcard::to_stdvec(&()).unwrap();
-    let response = handle_llm_request("list_models", &params, &state)
+    let manifest = manifest_with_llm_roles(vec!["thinker"]);
+    let response = handle_llm_request(&manifest, "list_models", &params, &state)
         .await
         .unwrap();
     let llm_response: LlmResponse = postcard::from_bytes(&response).unwrap();
@@ -134,7 +163,8 @@ async fn test_handle_list_roles() {
     state.initialize().await.unwrap();
 
     let params = postcard::to_stdvec(&()).unwrap();
-    let response = handle_llm_request("list_roles", &params, &state)
+    let manifest = manifest_with_llm_roles(vec!["thinker"]);
+    let response = handle_llm_request(&manifest, "list_roles", &params, &state)
         .await
         .unwrap();
     let llm_response: LlmResponse = postcard::from_bytes(&response).unwrap();
@@ -191,7 +221,8 @@ async fn test_handle_chat() {
     };
 
     let params = postcard::to_stdvec(&chat_params).unwrap();
-    let result = handle_llm_request("chat", &params, &state).await;
+    let manifest = manifest_with_llm_roles(vec!["thinker"]);
+    let result = handle_llm_request(&manifest, "chat", &params, &state).await;
 
     // 由于 API key 无效，预期会失败
     assert!(result.is_err());
@@ -207,6 +238,104 @@ async fn test_handle_unknown_method() {
     state.initialize().await.unwrap();
 
     let params = postcard::to_stdvec(&()).unwrap();
-    let result = handle_llm_request("unknown", &params, &state).await;
+    let manifest = manifest_with_llm_roles(vec!["thinker"]);
+    let result = handle_llm_request(&manifest, "unknown", &params, &state).await;
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_llm_denied_when_not_configured() {
+    let (_root, paths) = test_paths();
+    std::fs::create_dir_all(&paths.config_dir).unwrap();
+    let state = LlmState::new(&paths);
+    state.initialize().await.unwrap();
+
+    let manifest = AppManifest {
+        app_id: AppId::new("test-app"),
+        worker: WorkerCommand {
+            program: "/bin/true".to_string(),
+            args: vec![],
+            env: BTreeMap::new(),
+            cwd: None,
+        },
+        permissions: AppPermissions::default(),
+        capabilities: CapabilitiesConfig::default(),
+        idle_timeout_ms: 300_000,
+        startup_timeout_ms: 10_000,
+    };
+
+    let params = postcard::to_stdvec(&()).unwrap();
+    let result = handle_llm_request(&manifest, "list_providers", &params, &state).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert_eq!(err.code, "permission_denied");
+    assert!(err.message.contains("not configured"));
+}
+
+#[tokio::test]
+async fn test_llm_denied_when_role_not_in_list() {
+    let (_root, paths) = test_paths();
+    std::fs::create_dir_all(&paths.config_dir).unwrap();
+
+    let providers = create_test_providers();
+    let config = LlmConfig { providers };
+    let config_loader = ConfigLoader::new(&paths);
+    config_loader.save_providers(&config).unwrap();
+
+    let state = LlmState::new(&paths);
+    state.initialize().await.unwrap();
+
+    let manifest = manifest_with_llm_roles(vec!["coder"]);
+
+    let chat_params = LlmChatParams {
+        role: "thinker".to_string(),
+        messages: vec![LlmMessage {
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+        }],
+        stream: None,
+        temperature: None,
+        max_tokens: None,
+    };
+
+    let params = postcard::to_stdvec(&chat_params).unwrap();
+    let result = handle_llm_request(&manifest, "chat", &params, &state).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert_eq!(err.code, "permission_denied");
+    assert!(err.message.contains("not allowed"));
+}
+
+#[tokio::test]
+async fn test_llm_denied_when_roles_list_empty() {
+    let (_root, paths) = test_paths();
+    std::fs::create_dir_all(&paths.config_dir).unwrap();
+
+    let providers = create_test_providers();
+    let config = LlmConfig { providers };
+    let config_loader = ConfigLoader::new(&paths);
+    config_loader.save_providers(&config).unwrap();
+
+    let state = LlmState::new(&paths);
+    state.initialize().await.unwrap();
+
+    let manifest = manifest_with_llm_roles(vec![]);
+
+    let chat_params = LlmChatParams {
+        role: "thinker".to_string(),
+        messages: vec![LlmMessage {
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+        }],
+        stream: None,
+        temperature: None,
+        max_tokens: None,
+    };
+
+    let params = postcard::to_stdvec(&chat_params).unwrap();
+    let result = handle_llm_request(&manifest, "chat", &params, &state).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert_eq!(err.code, "permission_denied");
+    assert!(err.message.contains("no allowed roles"));
 }

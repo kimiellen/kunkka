@@ -55,7 +55,7 @@ Capability permission enforcement status:
 | `http` | ✅ 域名白名单 | `capabilities.http.domains` in manifest |
 | `sqlite` | ✅ per-app 隔离 | 每个 app 独立数据库目录 |
 | `shell` | ✅ 三态策略（allow/ask/deny） | `capabilities.shell` in manifest |
-| `llm` | ❌ 无限制 | 尚未接入 manifest 权限 |
+| `llm` | ✅ 角色白名单 | `capabilities.llm.roles` in manifest |
 
 ## Current Frontend Dispatch Status
 

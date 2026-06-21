@@ -25,6 +25,7 @@ fn manifest_with_dir(dir: &std::path::Path) -> AppManifest {
             }),
             shell: None,
             http: None,
+            llm: None,
         },
         idle_timeout_ms: 300_000,
         startup_timeout_ms: 10_000,

@@ -22,6 +22,7 @@ fn manifest_with_shell(allow: Vec<&str>, ask: Vec<&str>) -> AppManifest {
                 ask: ask.into_iter().map(String::from).collect(),
             }),
             http: None,
+            llm: None,
         },
         idle_timeout_ms: 300_000,
         startup_timeout_ms: 10_000,

@@ -85,7 +85,7 @@ async fn handle_capability_inner(
                 code: "unavailable".to_string(),
                 message: "LLM state not available".to_string(),
             })?;
-            llm::handle_llm_request(&request.method, &request.params, state).await
+            llm::handle_llm_request(manifest, &request.method, &request.params, state).await
         }
         "shell" => {
             shell::handle_shell_request(manifest, &request.method, &request.params, approvals).await

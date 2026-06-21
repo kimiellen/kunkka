@@ -43,6 +43,7 @@ pub struct CapabilitiesConfig {
     pub fs: Option<FsCapabilityConfig>,
     pub shell: Option<ShellCapabilityConfig>,
     pub http: Option<HttpCapabilityConfig>,
+    pub llm: Option<LlmCapabilityConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -59,6 +60,11 @@ pub struct ShellCapabilityConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HttpCapabilityConfig {
     pub domains: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LlmCapabilityConfig {
+    pub roles: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,6 +113,8 @@ struct RawCapabilitiesConfig {
     shell: Option<RawShellCapabilityConfig>,
     #[serde(default)]
     http: Option<RawHttpCapabilityConfig>,
+    #[serde(default)]
+    llm: Option<RawLlmCapabilityConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -127,6 +135,12 @@ struct RawShellCapabilityConfig {
 struct RawHttpCapabilityConfig {
     #[serde(default)]
     domains: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawLlmCapabilityConfig {
+    #[serde(default)]
+    roles: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -181,7 +195,15 @@ impl AppManifest {
                 let http = raw_caps.http.map(|raw_http| HttpCapabilityConfig {
                     domains: raw_http.domains.unwrap_or_default(),
                 });
-                CapabilitiesConfig { fs, shell, http }
+                let llm = raw_caps.llm.map(|raw_llm| LlmCapabilityConfig {
+                    roles: raw_llm.roles.unwrap_or_default(),
+                });
+                CapabilitiesConfig {
+                    fs,
+                    shell,
+                    http,
+                    llm,
+                }
             }
             None => CapabilitiesConfig::default(),
         };
@@ -285,6 +307,17 @@ impl AppManifest {
                         "{}: capabilities.http.domains contains domain with leading or trailing whitespace: {:?}",
                         path.display(),
                         domain
+                    )));
+                }
+            }
+        }
+
+        if let Some(llm_caps) = &self.capabilities.llm {
+            for role in &llm_caps.roles {
+                if role.trim().is_empty() {
+                    return Err(CoreError::ManifestInvalid(format!(
+                        "{}: capabilities.llm.roles contains blank role",
+                        path.display()
                     )));
                 }
             }

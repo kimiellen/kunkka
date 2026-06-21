@@ -1,3 +1,4 @@
+use crate::app_manifest::AppManifest;
 use crate::capability::CapabilityError;
 use crate::llm::config::ConfigLoader;
 use crate::llm::presets;
@@ -287,12 +288,44 @@ impl LlmState {
     }
 }
 
+fn check_role_allowed(
+    role: &str,
+    config: &crate::app_manifest::LlmCapabilityConfig,
+) -> Result<(), CapabilityError> {
+    if config.roles.is_empty() {
+        return Err(CapabilityError {
+            code: "permission_denied".to_string(),
+            message: "LLM capability has no allowed roles".to_string(),
+        });
+    }
+    if !config.roles.iter().any(|r| r == role) {
+        return Err(CapabilityError {
+            code: "permission_denied".to_string(),
+            message: format!("LLM role {:?} is not allowed", role),
+        });
+    }
+    Ok(())
+}
+
 /// 处理 LLM 请求
 pub async fn handle_llm_request(
+    manifest: &AppManifest,
     method: &str,
     params: &[u8],
     state: &LlmState,
 ) -> Result<Vec<u8>, CapabilityError> {
+    let llm_config = manifest
+        .capabilities
+        .llm
+        .as_ref()
+        .ok_or_else(|| CapabilityError {
+            code: "permission_denied".to_string(),
+            message: format!(
+                "LLM capability not configured for app {:?}",
+                manifest.app_id.as_str()
+            ),
+        })?;
+
     let response = match method {
         "chat" => {
             let request: LlmChatParams =
@@ -300,6 +333,7 @@ pub async fn handle_llm_request(
                     code: "invalid_params".to_string(),
                     message: format!("Failed to decode params: {e}"),
                 })?;
+            check_role_allowed(&request.role, llm_config)?;
             handle_chat(request, state).await?
         }
         "embeddings" => {
@@ -308,6 +342,7 @@ pub async fn handle_llm_request(
                     code: "invalid_params".to_string(),
                     message: format!("Failed to decode params: {e}"),
                 })?;
+            check_role_allowed(&request.role, llm_config)?;
             handle_embeddings(request, state).await?
         }
         "images" => {
@@ -316,6 +351,7 @@ pub async fn handle_llm_request(
                     code: "invalid_params".to_string(),
                     message: format!("Failed to decode params: {e}"),
                 })?;
+            check_role_allowed(&request.role, llm_config)?;
             handle_images(request, state).await?
         }
         "list_providers" => {
