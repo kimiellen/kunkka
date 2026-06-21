@@ -15,6 +15,7 @@ edition = "2021"
 rust-version = "1.80"
 
 [workspace.dependencies]
+async-openai = { version = "0.41", features = ["chat-completion", "embedding", "image"] }
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 futures-util = { version = "0.3", features = ["sink"] }

@@ -5,6 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+async-openai.workspace = true
+futures-util.workspace = true
 kunkka-ipc = { path = "../kunkka-ipc" }
 kunkka-protocol = { path = "../kunkka-protocol" }
 kunkka-worker-sdk = { path = "../kunkka-worker-sdk" }

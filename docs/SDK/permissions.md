@@ -4,16 +4,15 @@
 
 Permission decisions belong in `kunkka-core`.
 
-Native host, browser extension frontend, CLI frontend, TUI frontend, and app frontend code must not make final local capability permission decisions.
+Native host, browser extension frontend, app frontend code, and kunkka 底座管理工具（kunkka-cli、kunkka-tui）must not make final local capability permission decisions.
 
 ## Permission Subjects
 
 Permission subjects include:
 
-- app frontend
+- app frontend（上层应用前端）
 - app backend worker
-- CLI frontend
-- TUI frontend
+- kunkka 底座管理工具（kunkka-cli、kunkka-tui）
 - Browser Extension shell
 - registered CLI command
 

@@ -12,6 +12,7 @@ path = "src/main.rs"
 clap.workspace = true
 kunkka-ipc = { path = "../kunkka-ipc" }
 kunkka-protocol = { path = "../kunkka-protocol" }
+kunkka-worker-sdk = { path = "../kunkka-worker-sdk" }
 libc.workspace = true
 postcard.workspace = true
 serde.workspace = true

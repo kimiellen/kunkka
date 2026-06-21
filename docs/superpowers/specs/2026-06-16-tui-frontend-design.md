@@ -1,5 +1,7 @@
 # kunkka-tui 设计
 
+> **注意**：本文档中的 "TUI frontend" 指 `kunkka-tui`，即 Kunkka 底座自身的管理 TUI 平台，不是基于 Kunkka 开发的上层应用 TUI 软件。
+
 ## [S1] 项目定位
 
 kunkka-tui 是 Kunkka 的全屏 TUI frontend，基于 Ratatui + crossterm。

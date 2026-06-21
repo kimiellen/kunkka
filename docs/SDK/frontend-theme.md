@@ -4,7 +4,7 @@
 
 Kunkka 提供统一的主题系统，支持 Catppuccin Latte（浅色）和 Macchiato（深色）两种主题。
 
-Frontend（TUI、Browser Extension、CLI）可以通过 IPC 协议查询和切换主题，并接收主题变更事件实现即时刷新。
+上层应用 Frontend（TUI 应用、Browser Extension、CLI 工具）和底座管理工具（kunkka-cli、kunkka-tui）可以通过 IPC 协议查询和切换主题，并接收主题变更事件实现即时刷新。
 
 ## 主题配置
 
@@ -115,9 +115,9 @@ CoreControlMessage::ThemeChanged(ThemeChangedEvent {
 
 ## Frontend 集成指南
 
-### TUI 应用
+### TUI 应用（上层应用）
 
-TUI 应用应保持与 Core 的长连接，监听主题变更事件并即时刷新界面：
+上层 TUI 应用应保持与 Core 的长连接，监听主题变更事件并即时刷新界面：
 
 ```rust
 // 1. 连接 Core

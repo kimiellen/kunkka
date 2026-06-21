@@ -48,4 +48,7 @@ pub enum CoreError {
 
     #[error("database error: {0}")]
     Database(String),
+
+    #[error("config error: {0}")]
+    Config(String),
 }

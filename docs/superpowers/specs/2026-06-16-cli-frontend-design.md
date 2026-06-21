@@ -1,5 +1,7 @@
 # CLI Frontend 设计
 
+> **注意**：本文档中的 "CLI frontend" 指 `kunkka-cli`，即 Kunkka 底座自身的管理命令行入口（`kunkka` 命令），不是基于 Kunkka 开发的上层应用 CLI 工具。
+
 ## 状态
 
 已在 2026-06-16 批准用于规格化。

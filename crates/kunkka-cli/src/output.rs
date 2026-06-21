@@ -41,6 +41,75 @@ pub enum CliResult {
         capability: String,
         summary: String,
     },
+    LlmPresets {
+        presets: Vec<LlmPresetResult>,
+    },
+    LlmProviders {
+        providers: Vec<LlmProviderResult>,
+    },
+    LlmRoles {
+        roles: Vec<LlmRoleResult>,
+    },
+    LlmProviderTest {
+        name: String,
+        success: bool,
+        latency_ms: Option<u64>,
+        error: Option<String>,
+    },
+    LlmUsageSummary {
+        total_requests: u64,
+        total_prompt_tokens: u64,
+        total_completion_tokens: u64,
+        total_tokens: u64,
+    },
+    LlmUsageRecords {
+        records: Vec<LlmUsageRecordResult>,
+    },
+    LlmDefaultRole {
+        role_name: Option<String>,
+    },
+    LlmSuccess,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LlmPresetResult {
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LlmProviderResult {
+    pub name: String,
+    pub provider_type: String,
+    pub base_url: String,
+    pub available_models: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LlmRoleResult {
+    pub name: String,
+    pub description: String,
+    pub provider: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LlmProviderTestResult {
+    pub success: bool,
+    pub latency_ms: Option<u64>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LlmUsageRecordResult {
+    pub timestamp: u64,
+    pub provider: String,
+    pub model: String,
+    pub role: String,
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

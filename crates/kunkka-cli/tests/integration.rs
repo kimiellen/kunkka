@@ -4,13 +4,13 @@ use kunkka_cli::run_command_with_socket_and_input;
 use kunkka_core::capability::shell::{
     PendingApprovalReceipt, ShellRunOutcome, ShellRunParams, ShellRunResult,
 };
-use kunkka_core::capability::{
-    decode_capability_response, encode_capability_request, CapabilityRequest,
-};
 use kunkka_core::prepare_core_runtime;
 use kunkka_core::runtime::CoreRuntime;
 use kunkka_core::xdg::KunkkaPaths;
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload, RequestId, SessionId};
+use kunkka_worker_sdk::capability::{
+    decode_capability_response, encode_capability_request, CapabilityRequest,
+};
 use kunkka_worker_sdk::{
     AppId, DispatchWorkerResponse, RegisterWorkerRequest, WorkerCapability, WorkerClient, WorkerId,
 };

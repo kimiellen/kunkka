@@ -1,7 +1,7 @@
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcListener, RequestId, SessionId};
 use kunkka_worker_sdk::capability::{
-    call_capability, decode_capability_request, encode_capability_response, CapabilityError,
-    CapabilityResponse,
+    call_capability, decode_capability_request, encode_capability_response, open_capability_stream,
+    CapabilityError, CapabilityResponse,
 };
 use kunkka_worker_sdk::AppId;
 use tempfile::{tempdir, TempDir};
@@ -142,5 +142,126 @@ async fn call_capability_rejects_non_response_frame() {
     assert!(err
         .to_string()
         .contains("expected capability response frame"));
+    server_task.await.unwrap();
+}
+
+#[tokio::test]
+async fn open_capability_stream_receives_stream_chunks() {
+    let (_root, socket_path) = socket_path();
+    let listener = IpcListener::bind(&socket_path).await.unwrap();
+    let server_task = tokio::spawn(async move {
+        let mut connection = listener.accept().await.unwrap();
+        let frame = connection.recv_frame().await.unwrap().unwrap();
+        let Frame::Request {
+            request_id,
+            session_id,
+            ..
+        } = frame
+        else {
+            panic!("expected request frame");
+        };
+
+        connection
+            .send_frame(&Frame::Stream {
+                stream_id: kunkka_ipc::StreamId(7),
+                request_id: Some(request_id),
+                session_id,
+                source: EndpointId::new("core"),
+                target: EndpointId::new("worker-sdk"),
+                payload: kunkka_ipc::Payload {
+                    bytes: b"hello".to_vec(),
+                    content_type: None,
+                    schema: None,
+                    metadata: FrameMetadata::new(),
+                },
+                end: false,
+                metadata: FrameMetadata::new(),
+            })
+            .await
+            .unwrap();
+
+        connection
+            .send_frame(&Frame::Stream {
+                stream_id: kunkka_ipc::StreamId(7),
+                request_id: Some(request_id),
+                session_id,
+                source: EndpointId::new("core"),
+                target: EndpointId::new("worker-sdk"),
+                payload: kunkka_ipc::Payload {
+                    bytes: Vec::new(),
+                    content_type: None,
+                    schema: None,
+                    metadata: FrameMetadata::new(),
+                },
+                end: true,
+                metadata: FrameMetadata::new(),
+            })
+            .await
+            .unwrap();
+    });
+
+    let mut stream = open_capability_stream(
+        &socket_path,
+        &AppId::new("notes"),
+        "llm",
+        "chat",
+        b"encoded-params".to_vec(),
+    )
+    .await
+    .unwrap();
+
+    let first = stream.next_chunk().await.unwrap().unwrap();
+    assert_eq!(first.bytes, b"hello");
+    assert!(!first.end);
+
+    let second = stream.next_chunk().await.unwrap().unwrap();
+    assert!(second.bytes.is_empty());
+    assert!(second.end);
+
+    server_task.await.unwrap();
+}
+
+#[tokio::test]
+async fn open_capability_stream_reports_response_error() {
+    let (_root, socket_path) = socket_path();
+    let listener = IpcListener::bind(&socket_path).await.unwrap();
+    let server_task = tokio::spawn(async move {
+        let mut connection = listener.accept().await.unwrap();
+        let frame = connection.recv_frame().await.unwrap().unwrap();
+        let Frame::Request { request_id, .. } = frame else {
+            panic!("expected request frame");
+        };
+
+        let response = Frame::Response {
+            request_id,
+            session_id: SessionId(1),
+            source: EndpointId::new("core"),
+            target: EndpointId::new("worker-sdk"),
+            payload: encode_capability_response(&CapabilityResponse {
+                result: Err(CapabilityError {
+                    code: "llm_error".to_string(),
+                    message: "stream rejected".to_string(),
+                }),
+            })
+            .unwrap(),
+            metadata: FrameMetadata::new(),
+        };
+        connection.send_frame(&response).await.unwrap();
+    });
+
+    let err = match open_capability_stream(
+        &socket_path,
+        &AppId::new("notes"),
+        "llm",
+        "chat",
+        Vec::new(),
+    )
+    .await
+    {
+        Ok(_) => panic!("expected stream open to fail"),
+        Err(err) => err,
+    };
+
+    assert!(err.to_string().contains("capability stream rejected"));
     server_task.await.unwrap();
 }
