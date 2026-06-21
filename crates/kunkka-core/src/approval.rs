@@ -216,4 +216,268 @@ mod tests {
         let result = store.consume_approved(&approval_id, "notes", "shell", "printf approved");
         assert_eq!(result, Ok(()));
     }
+
+    #[test]
+    fn create_returns_sequential_ids() {
+        let mut store = ApprovalStore::new();
+        let id1 = store.create(
+            "a".into(),
+            "shell".into(),
+            "cmd1".into(),
+            vec!["cmd1".into()],
+        );
+        let id2 = store.create(
+            "a".into(),
+            "shell".into(),
+            "cmd2".into(),
+            vec!["cmd2".into()],
+        );
+        assert_eq!(id1, "approval-1");
+        assert_eq!(id2, "approval-2");
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn list_pending_returns_all_pending_entries() {
+        let mut store = ApprovalStore::new();
+        store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd1".into(),
+            vec!["cmd1".into()],
+        );
+        store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd2".into(),
+            vec!["cmd2".into()],
+        );
+        store.create(
+            "todo".into(),
+            "shell".into(),
+            "cmd3".into(),
+            vec!["cmd3".into()],
+        );
+
+        let pending = store.list_pending();
+        assert_eq!(pending.len(), 3);
+        assert!(pending.iter().all(|a| a.capability == "shell"));
+    }
+
+    #[test]
+    fn list_pending_excludes_approved_entries() {
+        let mut store = ApprovalStore::new();
+        let id1 = store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd1".into(),
+            vec!["cmd1".into()],
+        );
+        store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd2".into(),
+            vec!["cmd2".into()],
+        );
+
+        store.approve(&id1);
+        let pending = store.list_pending();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].approval_id, "approval-2");
+    }
+
+    #[test]
+    fn list_pending_excludes_rejected_entries() {
+        let mut store = ApprovalStore::new();
+        let id1 = store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd1".into(),
+            vec!["cmd1".into()],
+        );
+        store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd2".into(),
+            vec!["cmd2".into()],
+        );
+
+        store.reject(&id1);
+        let pending = store.list_pending();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].approval_id, "approval-2");
+    }
+
+    #[test]
+    fn approve_nonexistent_id_is_noop() {
+        let mut store = ApprovalStore::new();
+        store.approve("nonexistent");
+        assert!(store.list_pending().is_empty());
+    }
+
+    #[test]
+    fn reject_nonexistent_id_is_noop() {
+        let mut store = ApprovalStore::new();
+        store.reject("nonexistent");
+        assert!(store.list_pending().is_empty());
+    }
+
+    #[test]
+    fn consume_approved_succeeds_for_approved_entry() {
+        let mut store = ApprovalStore::new();
+        let id = store.create(
+            "notes".into(),
+            "shell".into(),
+            "rg todo".into(),
+            vec!["rg".into()],
+        );
+        store.approve(&id);
+
+        let result = store.consume_approved(&id, "notes", "shell", "rg todo");
+        assert_eq!(result, Ok(()));
+        assert!(!store.entries.contains_key(&id));
+    }
+
+    #[test]
+    fn consume_approved_returns_pending_for_pending_entry() {
+        let mut store = ApprovalStore::new();
+        let id = store.create(
+            "notes".into(),
+            "shell".into(),
+            "rg todo".into(),
+            vec!["rg".into()],
+        );
+
+        let result = store.consume_approved(&id, "notes", "shell", "rg todo");
+        assert_eq!(result, Err(ApprovalConsumeError::Pending));
+    }
+
+    #[test]
+    fn consume_approved_returns_not_found_for_missing_entry() {
+        let mut store = ApprovalStore::new();
+        let result = store.consume_approved("missing", "notes", "shell", "cmd");
+        assert_eq!(result, Err(ApprovalConsumeError::NotFound));
+    }
+
+    #[test]
+    fn consume_approved_returns_mismatch_for_wrong_app_id() {
+        let mut store = ApprovalStore::new();
+        let id = store.create(
+            "notes".into(),
+            "shell".into(),
+            "rg todo".into(),
+            vec!["rg".into()],
+        );
+        store.approve(&id);
+
+        let result = store.consume_approved(&id, "wrong-app", "shell", "rg todo");
+        assert_eq!(result, Err(ApprovalConsumeError::Mismatch));
+    }
+
+    #[test]
+    fn consume_approved_returns_mismatch_for_wrong_capability() {
+        let mut store = ApprovalStore::new();
+        let id = store.create(
+            "notes".into(),
+            "shell".into(),
+            "rg todo".into(),
+            vec!["rg".into()],
+        );
+        store.approve(&id);
+
+        let result = store.consume_approved(&id, "notes", "fs", "rg todo");
+        assert_eq!(result, Err(ApprovalConsumeError::Mismatch));
+    }
+
+    #[test]
+    fn consume_approved_returns_mismatch_for_wrong_command() {
+        let mut store = ApprovalStore::new();
+        let id = store.create(
+            "notes".into(),
+            "shell".into(),
+            "rg todo".into(),
+            vec!["rg".into()],
+        );
+        store.approve(&id);
+
+        let result = store.consume_approved(&id, "notes", "shell", "different cmd");
+        assert_eq!(result, Err(ApprovalConsumeError::Mismatch));
+    }
+
+    #[test]
+    fn consume_approved_returns_rejected_and_cleans_up() {
+        let mut store = ApprovalStore::new();
+        let id = store.create(
+            "notes".into(),
+            "shell".into(),
+            "rm -rf /".into(),
+            vec!["rm".into()],
+        );
+        store.reject(&id);
+
+        let result = store.consume_approved(&id, "notes", "shell", "rm -rf /");
+        assert_eq!(result, Err(ApprovalConsumeError::NotFound));
+        assert!(!store.entries.contains_key(&id));
+    }
+
+    #[test]
+    fn list_pending_preserves_field_values() {
+        let mut store = ApprovalStore::new();
+        store.create(
+            "my-app".into(),
+            "shell".into(),
+            "printf 'hello world'".into(),
+            vec!["printf".into()],
+        );
+
+        let pending = store.list_pending();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].app_id, "my-app");
+        assert_eq!(pending[0].capability, "shell");
+        assert_eq!(pending[0].summary, "printf 'hello world'");
+        assert!(pending[0].approval_id.starts_with("approval-"));
+    }
+
+    #[test]
+    fn multiple_entries_independent_state_transitions() {
+        let mut store = ApprovalStore::new();
+        let id1 = store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd1".into(),
+            vec!["cmd1".into()],
+        );
+        let id2 = store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd2".into(),
+            vec!["cmd2".into()],
+        );
+        let id3 = store.create(
+            "notes".into(),
+            "shell".into(),
+            "cmd3".into(),
+            vec!["cmd3".into()],
+        );
+
+        store.approve(&id1);
+        store.reject(&id2);
+
+        let pending = store.list_pending();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].approval_id, id3);
+
+        assert_eq!(
+            store.consume_approved(&id1, "notes", "shell", "cmd1"),
+            Ok(())
+        );
+        assert_eq!(
+            store.consume_approved(&id2, "notes", "shell", "cmd2"),
+            Err(ApprovalConsumeError::NotFound)
+        );
+        assert_eq!(
+            store.consume_approved(&id3, "notes", "shell", "cmd3"),
+            Err(ApprovalConsumeError::Pending)
+        );
+    }
 }
