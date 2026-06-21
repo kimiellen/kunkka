@@ -128,4 +128,3 @@ let images = call_llm_images(&socket_path, &app_id, LlmImagesParams { ... }).awa
 - heartbeat loop（worker 崩溃检测）
 - worker lifecycle restart policy（重启策略）
 - worker cancellation（取消正在处理的请求）
-- shell 命令执行超时

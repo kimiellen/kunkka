@@ -47,7 +47,15 @@ Permission enforcement is partially implemented.
 
 Frontend dispatch is now checked against manifest-declared `permissions.frontend_dispatch.allowed_methods`. If the method is not in the allowed list, core returns `permission_denied`. If no manifest exists for the app, core returns `app_not_found`. Both allow and deny decisions are audited by `kunkka-core` into the core SQLite database.
 
-Worker invocation, database access, file access, shell execution, and other controlled capabilities are not yet enforced.
+Capability permission enforcement status:
+
+| Capability | Enforcement | Source |
+|-----------|-------------|--------|
+| `fs` | ✅ 路径白名单 | `capabilities.fs.paths` in manifest |
+| `http` | ✅ 域名白名单 | `capabilities.http.domains` in manifest |
+| `sqlite` | ✅ per-app 隔离 | 每个 app 独立数据库目录 |
+| `shell` | ✅ 三态策略（allow/ask/deny） | `capabilities.shell` in manifest |
+| `llm` | ❌ 无限制 | 尚未接入 manifest 权限 |
 
 ## Current Frontend Dispatch Status
 
