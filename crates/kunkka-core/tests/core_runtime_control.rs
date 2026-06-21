@@ -3,8 +3,9 @@ use kunkka_core::xdg::KunkkaPaths;
 use kunkka_core::CoreError;
 use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload, RequestId, SessionId};
 use kunkka_protocol::core_control::{
-    decode_control_message, encode_control_message, CoreControlMessage, CorePingRequest,
-    CorePingResponse, CoreStatusRequest,
+    decode_control_message, encode_control_message, CoreControlMessage, CoreGetThemeRequest,
+    CorePingRequest, CorePingResponse, CoreSetThemeRequest, CoreStatusRequest, ThemeChangedEvent,
+    ThemeFlavor,
 };
 use kunkka_worker_sdk::{AppId, RegisterWorkerRequest, WorkerCapability, WorkerClient, WorkerId};
 use std::path::PathBuf;
@@ -315,4 +316,192 @@ async fn one_connection_can_handle_multiple_control_requests() {
         decode_control_message(&status_payload).unwrap(),
         CoreControlMessage::StatusResult(_)
     ));
+}
+
+#[tokio::test]
+async fn set_theme_switches_flavor_and_persists() {
+    let (_root, paths) = test_paths();
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let client_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+
+            let payload =
+                encode_control_message(&CoreControlMessage::SetTheme(CoreSetThemeRequest {
+                    flavor: ThemeFlavor::Latte,
+                }))
+                .unwrap();
+            let frame = Frame::Request {
+                request_id: RequestId(201),
+                session_id: SessionId(1),
+                source: EndpointId::new("cli"),
+                target: EndpointId::new("core"),
+                payload,
+                metadata: FrameMetadata::new(),
+            };
+            connection.send_frame(&frame).await.unwrap();
+            connection.recv_frame().await.unwrap().unwrap()
+        }
+    });
+
+    runtime.run_once().await.unwrap();
+    let response_frame = client_task.await.unwrap();
+
+    let Frame::Response { payload, .. } = response_frame else {
+        panic!("expected response frame");
+    };
+    assert_eq!(
+        decode_control_message(&payload).unwrap(),
+        CoreControlMessage::SetThemeResult(kunkka_protocol::core_control::CoreSetThemeResponse)
+    );
+
+    assert_eq!(
+        runtime.theme_manager().active_flavor(),
+        kunkka_core::theme::ThemeFlavor::Latte
+    );
+
+    let json = std::fs::read_to_string(paths.config_dir.join("theme.json")).unwrap();
+    assert!(json.contains("\"latte\""));
+}
+
+#[tokio::test]
+async fn get_theme_returns_current_flavor() {
+    let (_root, paths) = test_paths();
+    let mut runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let client_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+            let payload =
+                encode_control_message(&CoreControlMessage::GetTheme(CoreGetThemeRequest)).unwrap();
+            let frame = Frame::Request {
+                request_id: RequestId(202),
+                session_id: SessionId(1),
+                source: EndpointId::new("cli"),
+                target: EndpointId::new("core"),
+                payload,
+                metadata: FrameMetadata::new(),
+            };
+            connection.send_frame(&frame).await.unwrap();
+            connection.recv_frame().await.unwrap().unwrap()
+        }
+    });
+
+    runtime.run_once().await.unwrap();
+    let response_frame = client_task.await.unwrap();
+
+    let Frame::Response { payload, .. } = response_frame else {
+        panic!("expected response frame");
+    };
+    let decoded = decode_control_message(&payload).unwrap();
+    assert_eq!(
+        decoded,
+        CoreControlMessage::GetThemeResult(kunkka_protocol::core_control::CoreGetThemeResponse {
+            flavor: ThemeFlavor::Macchiato,
+        })
+    );
+}
+
+#[tokio::test]
+async fn set_theme_then_get_theme_reflects_change() {
+    let (_root, paths) = test_paths();
+    let runtime = prepare_core_runtime(&paths).await.unwrap();
+
+    let runtime_task = tokio::spawn(async move {
+        let _ = runtime.run().await;
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let client_task = tokio::spawn({
+        let socket_path = paths.socket_path.clone();
+        async move {
+            let mut connection = IpcConnection::connect(&socket_path).await.unwrap();
+
+            let set_payload =
+                encode_control_message(&CoreControlMessage::SetTheme(CoreSetThemeRequest {
+                    flavor: ThemeFlavor::Latte,
+                }))
+                .unwrap();
+            let set_frame = Frame::Request {
+                request_id: RequestId(301),
+                session_id: SessionId(1),
+                source: EndpointId::new("cli"),
+                target: EndpointId::new("core"),
+                payload: set_payload,
+                metadata: FrameMetadata::new(),
+            };
+            connection.send_frame(&set_frame).await.unwrap();
+            let set_response = connection.recv_frame().await.unwrap().unwrap();
+
+            let theme_event = connection.recv_frame().await.unwrap().unwrap();
+
+            let get_payload =
+                encode_control_message(&CoreControlMessage::GetTheme(CoreGetThemeRequest)).unwrap();
+            let get_frame = Frame::Request {
+                request_id: RequestId(302),
+                session_id: SessionId(1),
+                source: EndpointId::new("cli"),
+                target: EndpointId::new("core"),
+                payload: get_payload,
+                metadata: FrameMetadata::new(),
+            };
+            connection.send_frame(&get_frame).await.unwrap();
+            let get_response = connection.recv_frame().await.unwrap().unwrap();
+
+            (set_response, theme_event, get_response)
+        }
+    });
+
+    let (set_response, theme_event, get_response) = client_task.await.unwrap();
+
+    let Frame::Response {
+        payload: set_payload,
+        ..
+    } = set_response
+    else {
+        panic!("expected set response frame");
+    };
+    assert_eq!(
+        decode_control_message(&set_payload).unwrap(),
+        CoreControlMessage::SetThemeResult(kunkka_protocol::core_control::CoreSetThemeResponse)
+    );
+
+    let Frame::Event {
+        name,
+        payload: event_payload,
+        ..
+    } = theme_event
+    else {
+        panic!("expected theme changed event frame");
+    };
+    assert_eq!(name, "theme_changed");
+    assert_eq!(
+        decode_control_message(&event_payload).unwrap(),
+        CoreControlMessage::ThemeChanged(ThemeChangedEvent {
+            flavor: ThemeFlavor::Latte,
+        })
+    );
+
+    let Frame::Response {
+        payload: get_payload,
+        ..
+    } = get_response
+    else {
+        panic!("expected get response frame");
+    };
+    assert_eq!(
+        decode_control_message(&get_payload).unwrap(),
+        CoreControlMessage::GetThemeResult(kunkka_protocol::core_control::CoreGetThemeResponse {
+            flavor: ThemeFlavor::Latte,
+        })
+    );
+
+    let json = std::fs::read_to_string(paths.config_dir.join("theme.json")).unwrap();
+    assert!(json.contains("\"latte\""));
+
+    runtime_task.abort();
 }

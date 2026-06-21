@@ -6,7 +6,7 @@ use crate::capability::{
 };
 use crate::database::CoreDatabase;
 use crate::ipc_server::CoreIpcServer;
-use crate::theme::ThemeManager;
+use crate::theme::{ThemeFlavor as CoreThemeFlavor, ThemeManager};
 use crate::worker_dispatch::{DispatchResult, WorkerManager};
 use crate::worker_registry::WorkerRegistry;
 use crate::xdg::KunkkaPaths;
@@ -16,8 +16,8 @@ use kunkka_ipc::{EndpointId, Frame, FrameMetadata, IpcConnection, Payload, Strea
 use kunkka_protocol::core_control::{
     decode_control_message, encode_control_message, CoreApprovalDecisionResponse,
     CoreControlMessage, CoreGetThemeResponse, CoreListApprovalsResponse, CorePingResponse,
-    CoreSetThemeResponse, CoreStatusResponse, ThemeFlavor as ProtocolThemeFlavor,
-    CORE_CONTROL_SCHEMA,
+    CoreSetThemeResponse, CoreStatusResponse, ThemeChangedEvent,
+    ThemeFlavor as ProtocolThemeFlavor, CORE_CONTROL_SCHEMA,
 };
 use kunkka_protocol::frontend_dispatch::{
     decode_frontend_dispatch_message, encode_frontend_dispatch_message, FrontendDispatchMessage,
@@ -25,9 +25,11 @@ use kunkka_protocol::frontend_dispatch::{
 };
 use kunkka_worker_sdk::{AppId, WORKER_PROTOCOL_SCHEMA};
 use std::time::Duration;
+use tokio::sync::broadcast;
 use tokio::time::{interval, MissedTickBehavior};
 
 const IDLE_REAP_INTERVAL: Duration = Duration::from_millis(100);
+const THEME_BROADCAST_CAPACITY: usize = 16;
 
 pub struct CoreRuntime {
     server: CoreIpcServer,
@@ -38,6 +40,7 @@ pub struct CoreRuntime {
     data_dir: std::path::PathBuf,
     llm_state: LlmState,
     theme_manager: ThemeManager,
+    theme_broadcast: broadcast::Sender<ProtocolThemeFlavor>,
 }
 
 impl CoreRuntime {
@@ -56,6 +59,8 @@ impl CoreRuntime {
         let theme_manager = ThemeManager::load_from_dir(&paths.config_dir)
             .map_err(|e| CoreError::Config(format!("Failed to load theme config: {}", e)))?;
 
+        let (theme_broadcast, _) = broadcast::channel(THEME_BROADCAST_CAPACITY);
+
         Ok(Self {
             server,
             worker_manager: WorkerManager::with_app_registry(
@@ -68,6 +73,7 @@ impl CoreRuntime {
             data_dir: paths.data_dir.clone(),
             llm_state,
             theme_manager,
+            theme_broadcast,
         })
     }
 
@@ -120,7 +126,8 @@ impl CoreRuntime {
             &mut self.sqlite_connections,
             &self.data_dir,
             &self.llm_state,
-            &self.theme_manager,
+            &mut self.theme_manager,
+            &self.theme_broadcast,
             connection,
         )
         .await
@@ -134,7 +141,7 @@ impl CoreRuntime {
             tokio::select! {
                 accepted = self.server.accept_one() => {
                     let connection = accepted?;
-                    run_connection(&self.server, &mut self.worker_manager, &mut self.approvals, &self._database, &mut self.sqlite_connections, &self.data_dir, &self.llm_state, &self.theme_manager, connection).await?;
+                    run_connection(&self.server, &mut self.worker_manager, &mut self.approvals, &self._database, &mut self.sqlite_connections, &self.data_dir, &self.llm_state, &mut self.theme_manager, &self.theme_broadcast, connection).await?;
                 }
                 _ = reap_interval.tick() => {
                     self.worker_manager.reap_idle_workers();
@@ -153,7 +160,8 @@ async fn run_connection(
     sqlite_connections: &mut SqliteConnectionStore,
     data_dir: &std::path::Path,
     llm_state: &LlmState,
-    theme_manager: &ThemeManager,
+    theme_manager: &mut ThemeManager,
+    theme_broadcast: &broadcast::Sender<ProtocolThemeFlavor>,
     mut connection: IpcConnection,
 ) -> Result<()> {
     let Some(first_frame) = connection.recv_frame().await? else {
@@ -167,12 +175,15 @@ async fn run_connection(
                 .await
         }
         Some(CORE_CONTROL_SCHEMA | FRONTEND_DISPATCH_SCHEMA) => {
+            let mut theme_rx = theme_broadcast.subscribe();
             run_frontend_connection(
                 server,
                 worker_manager,
                 approvals,
                 database,
                 theme_manager,
+                theme_broadcast,
+                &mut theme_rx,
                 connection,
                 first_frame,
             )
@@ -199,12 +210,15 @@ async fn run_connection(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_frontend_connection(
     server: &CoreIpcServer,
     worker_manager: &mut WorkerManager,
     approvals: &mut ApprovalStore,
     database: &CoreDatabase,
-    theme_manager: &ThemeManager,
+    theme_manager: &mut ThemeManager,
+    theme_broadcast: &broadcast::Sender<ProtocolThemeFlavor>,
+    theme_rx: &mut broadcast::Receiver<ProtocolThemeFlavor>,
     mut connection: IpcConnection,
     first_frame: Frame,
 ) -> Result<()> {
@@ -214,6 +228,7 @@ async fn run_frontend_connection(
         approvals,
         database,
         theme_manager,
+        theme_broadcast,
         first_frame,
     )
     .await?;
@@ -227,8 +242,30 @@ async fn run_frontend_connection(
                 let Some(frame) = frame? else {
                     return Ok(());
                 };
-                let response = handle_frontend_frame(server, worker_manager, approvals, database, theme_manager, frame).await?;
+                let response = handle_frontend_frame(server, worker_manager, approvals, database, theme_manager, theme_broadcast, frame).await?;
                 connection.send_frame(&response).await?;
+            }
+            theme_result = theme_rx.recv() => {
+                match theme_result {
+                    Ok(flavor) => {
+                        let event_payload = encode_control_message(
+                            &CoreControlMessage::ThemeChanged(ThemeChangedEvent { flavor }),
+                        )?;
+                        let event_frame = Frame::Event {
+                            session_id: kunkka_ipc::SessionId(0),
+                            source: EndpointId::new("core"),
+                            target: EndpointId::new("frontend"),
+                            name: "theme_changed".to_string(),
+                            payload: event_payload,
+                            metadata: FrameMetadata::new(),
+                        };
+                        if connection.send_frame(&event_frame).await.is_err() {
+                            return Ok(());
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => return Ok(()),
+                }
             }
             _ = reap_interval.tick() => {
                 worker_manager.reap_idle_workers();
@@ -429,7 +466,8 @@ async fn handle_frontend_frame(
     worker_manager: &mut WorkerManager,
     approvals: &mut ApprovalStore,
     database: &CoreDatabase,
-    theme_manager: &ThemeManager,
+    theme_manager: &mut ThemeManager,
+    theme_broadcast: &broadcast::Sender<ProtocolThemeFlavor>,
     frame: Frame,
 ) -> Result<Frame> {
     match frame_schema(&frame) {
@@ -438,6 +476,7 @@ async fn handle_frontend_frame(
             worker_manager.registry(),
             approvals,
             theme_manager,
+            theme_broadcast,
             frame,
         ),
         Some(FRONTEND_DISPATCH_SCHEMA) => {
@@ -600,7 +639,8 @@ fn handle_control_frame(
     server: &CoreIpcServer,
     registry: &WorkerRegistry,
     approvals: &mut ApprovalStore,
-    theme_manager: &ThemeManager,
+    theme_manager: &mut ThemeManager,
+    theme_broadcast: &broadcast::Sender<ProtocolThemeFlavor>,
     frame: Frame,
 ) -> Result<Frame> {
     let Frame::Request {
@@ -638,15 +678,15 @@ fn handle_control_frame(
             CoreControlMessage::ApprovalDecisionResult(CoreApprovalDecisionResponse)
         }
         CoreControlMessage::GetTheme(_) => {
-            let flavor = match theme_manager.active_flavor() {
-                crate::theme::ThemeFlavor::Latte => ProtocolThemeFlavor::Latte,
-                crate::theme::ThemeFlavor::Macchiato => ProtocolThemeFlavor::Macchiato,
-            };
+            let flavor = to_protocol_flavor(theme_manager.active_flavor());
             CoreControlMessage::GetThemeResult(CoreGetThemeResponse { flavor })
         }
-        CoreControlMessage::SetTheme(_request) => {
-            // Note: Actual theme switching is handled by the mutable runtime method
-            // This is just a response placeholder
+        CoreControlMessage::SetTheme(request) => {
+            let new_flavor = to_core_flavor(request.flavor);
+            if let Err(e) = theme_manager.switch_flavor(new_flavor) {
+                return Err(CoreError::Config(format!("Failed to switch theme: {e}")));
+            }
+            let _ = theme_broadcast.send(request.flavor);
             CoreControlMessage::SetThemeResult(CoreSetThemeResponse)
         }
         _ => {
@@ -683,5 +723,19 @@ fn target_or_core(target: EndpointId) -> EndpointId {
         EndpointId::new("core")
     } else {
         target
+    }
+}
+
+fn to_protocol_flavor(flavor: CoreThemeFlavor) -> ProtocolThemeFlavor {
+    match flavor {
+        CoreThemeFlavor::Latte => ProtocolThemeFlavor::Latte,
+        CoreThemeFlavor::Macchiato => ProtocolThemeFlavor::Macchiato,
+    }
+}
+
+fn to_core_flavor(flavor: ProtocolThemeFlavor) -> CoreThemeFlavor {
+    match flavor {
+        ProtocolThemeFlavor::Latte => CoreThemeFlavor::Latte,
+        ProtocolThemeFlavor::Macchiato => CoreThemeFlavor::Macchiato,
     }
 }
